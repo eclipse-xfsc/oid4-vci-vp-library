@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	go_sd_jwt "github.com/MichaelFraser99/go-sd-jwt"
+	go_sd_jwt "github.com/SchulzeStTSI/go-sd-jwt"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/sirupsen/logrus"
 )

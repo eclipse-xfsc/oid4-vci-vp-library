@@ -1,12 +1,10 @@
 module github.com/eclipse-xfsc/oid4-vci-vp-library
 
-go 1.24.0
-
-toolchain go1.24.2
+go 1.23.0
 
 require (
-	github.com/MichaelFraser99/go-sd-jwt v1.3.0
-	github.com/eclipse-xfsc/ssi-jwt v1.2.0
+	github.com/SchulzeStTSI/go-sd-jwt v0.0.3
+	github.com/eclipse-xfsc/ssi-jwt v1.2.1-goarchv1230
 	github.com/google/uuid v1.6.0
 	github.com/lestrrat-go/jwx/v2 v2.1.5
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
@@ -16,8 +14,8 @@ require (
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/eclipse-xfsc/crypto-provider-core v1.3.2 // indirect
-	github.com/eclipse-xfsc/did-core v1.0.2 // indirect
+	github.com/eclipse-xfsc/crypto-provider-core v1.4.1-goarchv1230 // indirect
+	github.com/eclipse-xfsc/did-core v1.0.2-goarchv1230 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
