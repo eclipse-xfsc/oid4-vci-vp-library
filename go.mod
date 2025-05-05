@@ -8,7 +8,7 @@ require (
 	github.com/MichaelFraser99/go-sd-jwt v1.3.0
 	github.com/eclipse-xfsc/ssi-jwt v1.2.0
 	github.com/google/uuid v1.6.0
-	github.com/lestrrat-go/jwx/v2 v2.1.5
+	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/oliveagle/jsonpath v0.0.0-20180606110733-2e52cf6e6852
 	github.com/sirupsen/logrus v1.9.3
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
