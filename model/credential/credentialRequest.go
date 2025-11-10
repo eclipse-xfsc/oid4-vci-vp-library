@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/config"
-	jwtext "github.com/eclipse-xfsc/ssi-jwt"
+	jwtext "github.com/eclipse-xfsc/ssi-jwt/v2"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/sirupsen/logrus"
 )
@@ -69,7 +69,7 @@ func (proof *Proof) CheckProof(audience string, cNonce string) (*jwt.Token, erro
 	}
 
 	if proof.ProofType == "jwt" {
-		jToken, err = jwtext.ParseSelfSigned(*proof.Jwt, options...)
+		jToken, err = jwtext.Parse(*proof.Jwt, options...)
 		if err != nil {
 			return nil, errors.Join(fmt.Errorf("failed to verify signature of proof"), err)
 		} else if jToken == nil {
