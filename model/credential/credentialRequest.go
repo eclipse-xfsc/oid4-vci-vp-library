@@ -53,8 +53,15 @@ func (proof *Proof) GetProof() *string {
 	return nil
 }
 
-func (proof *Proof) CheckProof(audience string, cNonce string) (*jwt.Token, error) {
-	logrus.Debug(proof.Jwt)
+func (proof *Proof) CheckProof(audience string, cNonce string, proofTypesSupported map[ProofVariant]ProofType) error {
+
+	logrus.Debug(proof)
+
+	_, ok := proofTypesSupported[ProofVariant(proof.ProofType)]
+
+	if !ok {
+		return errors.New("unsupported proof type")
+	}
 
 	var jToken jwt.Token
 	var err error
@@ -71,35 +78,61 @@ func (proof *Proof) CheckProof(audience string, cNonce string) (*jwt.Token, erro
 	if proof.ProofType == "jwt" {
 		jToken, err = jwtext.Parse(*proof.Jwt, options...)
 		if err != nil {
-			return nil, errors.Join(fmt.Errorf("failed to verify signature of proof"), err)
+			return errors.Join(fmt.Errorf("failed to verify signature of proof"), err)
 		} else if jToken == nil {
-			return nil, fmt.Errorf("failed to verify signature of proof, signature INVALID or expired! ")
+			return errors.Join(fmt.Errorf("failed to verify signature of proof, signature INVALID or expired! "), err)
 		}
+
+		nonceInf, isSet := jToken.Get("nonce")
+		if !isSet {
+			return errors.Join(fmt.Errorf("invalid authorization specified (missing nonce)"), err)
+		}
+
+		if _, ok := nonceInf.(string); !ok {
+			return errors.Join(fmt.Errorf("invalid nonce sepcified (expected string)"), err)
+		}
+
+		if nonceInf.(string) != cNonce {
+			return errors.Join(fmt.Errorf("nonce is not matching"), err)
+		}
+
+		return nil
+
 	} else {
 		if proof.ProofType == "cwt" {
 
 		} else {
-			return nil, fmt.Errorf("Invalid proof type, expected %s, got %s", "cwt", proof.ProofType)
+			return errors.Join(fmt.Errorf("Invalid proof type, expected %s, got %s", "cwt", proof.ProofType), err)
 		}
 	}
 
-	return &jToken, nil
+	return nil
 }
 
-func (request *CredentialRequest) CheckRequestValid(audience string, cNonce string, validTypes []string) (*jwt.Token, error) {
+func (request *CredentialRequest) CheckRequestValid(audience string, cNonce string, proofTypesSupported map[ProofVariant]ProofType) (bool, error) {
+	var err error
+	b := false
 
-	token, err := request.Proof.CheckProof(audience, cNonce)
-
-	if err == nil {
-
-		/*if reflect.DeepEqual(request.Types, validTypes) {
-			return nil, fmt.Errorf("CredentialRequest: invalid type, expected %s, got %s", validTypes, request.Types)
-		}*/
-
-		expectedFormat := "vc+sd-jwt"
-		if request.Format != expectedFormat {
-			return nil, fmt.Errorf("CredentialRequest: invalid format, expected %s, got %s", expectedFormat, request.Format)
+	if request.Proof != nil && len(proofTypesSupported) > 0 {
+		err := request.Proof.CheckProof(audience, cNonce, proofTypesSupported)
+		if err != nil {
+			return false, err
 		}
 	}
-	return token, err
+
+	if err == nil {
+		if request.Format != "" && request.CredentialIdentifier != "" {
+			return false, errors.New("either credential identifier or format is allowed")
+		}
+
+		if request.Format != "" {
+			if request.Format == "vc+sd-jwt" {
+				if request.Vct == nil {
+					return false, errors.New("requested format has missing vct")
+				}
+			}
+		}
+	}
+
+	return b, err
 }

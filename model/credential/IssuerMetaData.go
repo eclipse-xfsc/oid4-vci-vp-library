@@ -32,16 +32,16 @@ type CredentialRespEnc struct {
 }
 
 type CredentialConfiguration struct {
-	Format                               string                 `json:"format"`
-	Scope                                string                 `json:"scope"`
-	CryptographicBindingMethodsSupported []string               `json:"cryptographic_binding_methods_supported"`
-	CredentialSigningAlgValuesSupported  []string               `json:"credential_signing_alg_values_supported"`
-	CredentialDefinition                 CredentialDefinition   `json:"credential_definition"`
-	ProofTypesSupported                  map[string]ProofType   `json:"proof_types_supported"`
-	Display                              []LocalizedCredential  `json:"display"`
-	Vct                                  *string                `json:"vct,omitempty"`
-	Claims                               map[string]interface{} `json:"claims,omitempty"`
-	Order                                []string               `json:"order,omitempty"`
+	Format                               string                     `json:"format"`
+	Scope                                string                     `json:"scope"`
+	CryptographicBindingMethodsSupported []string                   `json:"cryptographic_binding_methods_supported"`
+	CredentialSigningAlgValuesSupported  []string                   `json:"credential_signing_alg_values_supported"`
+	CredentialDefinition                 CredentialDefinition       `json:"credential_definition"`
+	ProofTypesSupported                  map[ProofVariant]ProofType `json:"proof_types_supported"`
+	Display                              []LocalizedCredential      `json:"display"`
+	Vct                                  *string                    `json:"vct,omitempty"`
+	Claims                               map[string]interface{}     `json:"claims,omitempty"`
+	Order                                []string                   `json:"order,omitempty"`
 	///Out of OID Spec, but useful
 	Schema  map[string]interface{} `json:"schema,omitempty"` //json Schema representation of payload
 	Subject string                 `json:"topic,omitempty"`  // Subject of the credential within the system
@@ -64,6 +64,14 @@ type Display struct {
 
 type ProofType struct {
 	ProofSigningAlgValuesSupported []string `json:"proof_signing_alg_values_supported"`
+}
+
+type ProofVariant string
+
+var ProofVariants = []ProofVariant{
+	"jwt",
+	"cwt",
+	"ldp_vc",
 }
 
 type LocalizedCredential struct {

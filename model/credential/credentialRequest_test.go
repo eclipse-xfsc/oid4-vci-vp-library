@@ -1,11 +1,10 @@
-package tests
+package credential
 
 import (
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/credential"
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
@@ -26,7 +25,13 @@ const jwkPrivKey = `{
     "n": "uPsD5or7uGVyy9WmTc6amWzpGIZzsKCceUOh2slnptD8W8od1unUMws3uFZAGSYDaBceSQ7Wy5i8IJYJAY9Zu_GYGPMr3rfhzc4E1XVmuqhSO8QdrscnLxjn-dIWrUmzFXAnUKFaY0tMH6mrZug3RNNKHSrbs1bisZrsqZXGM0vTEGyL3sxjwd7gi4DM7Y7Xvv9qcdDTEpZ7t14QfucNl6V1FuVaNGwzst4Be9KDCNRTywIJ_Uogyy8OW9pKCVBpPJP9e_O607hAEgCE9nEGffnnZEVzs5QNu_PagUuZJABzsWZ4q--p8CVbzj1gED7DmLMNnUOxzlZ90ewFvDrdcw"
 }`
 
-func TestNonceValidation(t *testing.T) {
+func TestNonceValidationWithProof(t *testing.T) {
+
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: ProofType{
+			ProofSigningAlgValuesSupported: []string{"ES256"},
+		},
+	}
 
 	tok, err := jwt.NewBuilder().
 		Issuer("test.com").
@@ -57,26 +62,87 @@ func TestNonceValidation(t *testing.T) {
 		return
 	}
 	p := string(signed)
-	proof := credential.Proof{
-		ProofType: credential.ProofTypeJWT,
+	proof := Proof{
+		ProofType: ProofTypeJWT,
 		Jwt:       &p,
 	}
 
-	result, err2 := proof.CheckProof("audience", "123456")
+	err2 := proof.CheckProof("audience", "123456", proofTypesSupported)
 
-	if err2 != nil || result == nil {
+	if err2 != nil {
 		t.Error()
 	}
 
-	result, err2 = proof.CheckProof("bla", "123456")
+	err2 = proof.CheckProof("bla", "123456", proofTypesSupported)
 
-	if err2 == nil || result != nil {
+	if err2 == nil {
 		t.Error()
 	}
 
-	result, err2 = proof.CheckProof("audience", "1")
+	err2 = proof.CheckProof("audience", "1", proofTypesSupported)
 
-	if err2 == nil || result != nil {
+	if err2 == nil {
 		t.Error()
 	}
+}
+
+func TestSdJwtProfilingWithoutProofTypesSupported(t *testing.T) {
+
+	s := "test"
+
+	//Test vct with optional claims, no prooftype
+	validReq := CredentialRequest{
+		Format: "vc+sd-jwt",
+		Vct:    &s,
+	}
+
+	b, err := validReq.CheckRequestValid("", "", nil)
+
+	if err != nil && !b {
+		t.Error()
+	}
+
+}
+
+func TestSdJwtProfilingWithIdentifier(t *testing.T) {
+
+	s := "test"
+
+	//Test vct with optional claims, no prooftype
+	validReq := CredentialRequest{
+		Format:               "vc+sd-jwt",
+		Vct:                  &s,
+		CredentialIdentifier: "xxxx",
+	}
+
+	b, err := validReq.CheckRequestValid("", "", nil)
+
+	if err == nil || b {
+		t.Error()
+	}
+
+}
+
+func TestSdJwtProfilingWithJWTProofTypesSupported(t *testing.T) {
+
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: ProofType{
+			ProofSigningAlgValuesSupported: []string{"ES256"},
+		},
+	}
+
+	s := "test"
+
+	//Test vct with optional claims, no prooftype
+	validReq := CredentialRequest{
+		Format: "vc+sd-jwt",
+		Vct:    &s,
+	}
+
+	b, err := validReq.CheckRequestValid("", "", proofTypesSupported)
+
+	if err != nil && !b {
+		t.Error()
+	}
+
 }
