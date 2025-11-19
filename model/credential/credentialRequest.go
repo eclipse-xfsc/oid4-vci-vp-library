@@ -17,12 +17,14 @@ const (
 )
 
 type CredentialRequest struct {
-	Format               string                 `json:"format,omitempty"`
-	CredentialIdentifier string                 `json:"credential_identifier,omitempty"`
-	Proof                *Proof                 `json:"proof,omitempty"`
-	Vct                  *string                `json:"vct,omitempty"`
-	Claims               map[string]interface{} `json:"claims,omitempty"`
-	Order                []string               `json:"order,omitempty"`
+	Format               string `json:"format,omitempty"`
+	CredentialIdentifier string `json:"credential_identifier,omitempty"`
+	///OID 1.0
+	CredentialConfigurationId string                 `json:"credential_configuration_id,omitempty"`
+	Proof                     *Proof                 `json:"proof,omitempty"`
+	Vct                       *string                `json:"vct,omitempty"`
+	Claims                    map[string]interface{} `json:"claims,omitempty"`
+	Order                     []string               `json:"order,omitempty"`
 }
 
 type Proof struct {
