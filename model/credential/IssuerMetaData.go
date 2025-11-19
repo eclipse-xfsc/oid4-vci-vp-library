@@ -31,6 +31,11 @@ type CredentialRespEnc struct {
 	EncryptionRequired bool     `json:"encryption_required"`
 }
 
+type CredentialConfigurationIdentifier struct {
+	Id                   string   `json:"configuration_id"`
+	CredentialIdentifier []string `json:"credential_identifier"`
+}
+
 type CredentialConfiguration struct {
 	Format                               string                     `json:"format"`
 	Scope                                string                     `json:"scope"`
