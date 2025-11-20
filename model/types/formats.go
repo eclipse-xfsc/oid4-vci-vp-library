@@ -40,57 +40,68 @@ func CheckFormat(credential interface{}) (*Credential, error) {
 		return &c, errors.New("credential nil")
 	}
 
-	s, ok := credential.(string)
+	m, ok := credential.(map[string]interface{})
 
 	if ok {
-		var j map[string]interface{}
+		c.Format = LDPVC
+		c.Json = m
+		logrus.Info(credential)
+		return &c, nil
+	} else {
 
-		err := json.Unmarshal([]byte(s), &j)
+		s, ok := credential.(string)
 
-		if err == nil {
-			c.Format = LDPVC
-			c.Json = j
-			logrus.Error(err)
-			logrus.Info(s)
+		if ok {
+
+			var j map[string]interface{}
+
+			err := json.Unmarshal([]byte(s), &j)
+
+			if err == nil {
+				c.Format = LDPVC
+				c.Json = j
+				logrus.Error(err)
+				logrus.Info(s)
+				return &c, nil
+			}
+
+			if strings.Contains(s, "~") {
+
+				if s[len(s)-1] != '~' {
+					s = s + "~"
+				}
+
+				t, err := go_sd_jwt.New(s)
+
+				if err != nil {
+					logrus.Error(err)
+					logrus.Info(s)
+					return &c, err
+				}
+
+				c.Json, err = t.GetDisclosedClaims()
+
+				if err != nil {
+					logrus.Error(err)
+					logrus.Info(s)
+					return &c, err
+				}
+				c.Format = SDJWT
+
+			} else {
+
+				tok, err := jwt.ParseInsecure([]byte(s))
+				if err != nil {
+					logrus.Error(err)
+					logrus.Info(s)
+					return &c, err
+				}
+				c.Json = tok.PrivateClaims()
+				c.Format = JWTVC
+			}
+
 			return &c, nil
 		}
-
-		if strings.Contains(s, "~") {
-
-			if s[len(s)-1] != '~' {
-				s = s + "~"
-			}
-
-			t, err := go_sd_jwt.New(s)
-
-			if err != nil {
-				logrus.Error(err)
-				logrus.Info(s)
-				return &c, err
-			}
-
-			c.Json, err = t.GetDisclosedClaims()
-
-			if err != nil {
-				logrus.Error(err)
-				logrus.Info(s)
-				return &c, err
-			}
-			c.Format = SDJWT
-
-		} else {
-
-			tok, err := jwt.ParseInsecure([]byte(s))
-			if err != nil {
-				logrus.Error(err)
-				logrus.Info(s)
-				return &c, err
-			}
-			c.Json = tok.PrivateClaims()
-			c.Format = JWTVC
-		}
-
-		return &c, nil
 	}
 
 	return &c, errors.ErrUnsupported

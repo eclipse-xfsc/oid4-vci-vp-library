@@ -20,11 +20,11 @@ type Backend interface {
 
 type Service struct {
 	backend        Backend
-	store          presentation.Store
+	store          presentation.PresentationStore
 	RequestBaseURL string
 }
 
-func NewService(backend Backend, store presentation.Store, requestBaseURL string) *Service {
+func NewService(backend Backend, store presentation.PresentationStore, requestBaseURL string) *Service {
 	return &Service{
 		backend:        backend,
 		store:          store,

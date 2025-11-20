@@ -1,9 +1,9 @@
 package presentation
 
-// Store defines state management for OID4VP cross-device flows.
+// PresentationStore defines state management for OID4VP cross-device flows.
 //
-// A Store implementation MUST be concurrency-safe.
-type Store interface {
+// A PresentationStore implementation MUST be concurrency-safe.
+type PresentationStore interface {
 	// SaveRequest stores the authorization request parameters for a given state.
 	SaveRequest(state string, ar *AuthorizationRequest) error
 
