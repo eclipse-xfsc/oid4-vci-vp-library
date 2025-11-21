@@ -97,6 +97,7 @@ type FormatSpecification struct {
 }
 
 type CredentialResult struct {
+	Id   string `json:"type"`
 	Type string `json:"type"`
 	Data any    `json:"data"`
 }

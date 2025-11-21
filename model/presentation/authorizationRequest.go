@@ -16,8 +16,8 @@ type AuthorizationRequest struct {
 	State string `json:"state,omitempty"` // REQUIRED for cross-device, RECOMMENDED otherwise
 
 	// === Credential Query (one of MUST be present) ===
-	DCQLQuery interface{} `json:"dcql_query,omitempty"` // MUST if no scope
-	Scope     string      `json:"scope,omitempty"`      // MUST if no dcql_query
+	DCQLQuery *DCQLQuery `json:"dcql_query,omitempty"` // MUST if no scope
+	Scope     string     `json:"scope,omitempty"`      // MUST if no dcql_query
 
 	// === Response delivery ===
 	ResponseURI string `json:"response_uri,omitempty"` // REQUIRED if response_mode=direct_post
