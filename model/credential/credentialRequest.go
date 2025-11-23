@@ -62,6 +62,11 @@ func (proof *Proof) CheckProof(audience string, cNonce string, proofTypesSupport
 
 	logrus.Debug(proof)
 
+	//no proofcheck required for this
+	if len(proofTypesSupported) == 0 {
+		return nil
+	}
+
 	_, ok := proofTypesSupported[ProofVariant(proof.ProofType)]
 
 	if !ok {

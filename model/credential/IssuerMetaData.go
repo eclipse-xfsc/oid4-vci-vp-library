@@ -33,7 +33,7 @@ type CredentialRespEnc struct {
 
 type CredentialConfigurationIdentifier struct {
 	Id                   string   `json:"configuration_id"`
-	CredentialIdentifier []string `json:"credential_identifier"`
+	CredentialIdentifier []string `json:"credential_identifier,omitempty"`
 }
 
 type CredentialConfiguration struct {
