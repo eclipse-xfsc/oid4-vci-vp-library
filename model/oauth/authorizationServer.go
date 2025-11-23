@@ -27,10 +27,14 @@ type Token struct {
 	AuthorizationDetails *AuthorizationDetails `json:"authorization_details,omitempty"`
 }
 
+type Claims struct {
+}
+
 type AuthorizationDetails struct {
 	Type                      string   `json:"type"`
 	CredentialConfigurationID string   `json:"credential_configuration_id"`
-	CredentialIdentifiers     []string `json:"credential_identifiers"`
+	CredentialIdentifiers     []string `json:"credential_identifiers,omitempty"`
+	Claims                    []Claims `json:"claims,omitempty"`
 }
 
 type OpenIdConfiguration struct {

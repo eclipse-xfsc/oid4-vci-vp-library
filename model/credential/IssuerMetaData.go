@@ -43,13 +43,19 @@ type CredentialConfiguration struct {
 	CredentialSigningAlgValuesSupported  []string                   `json:"credential_signing_alg_values_supported"`
 	CredentialDefinition                 CredentialDefinition       `json:"credential_definition"`
 	ProofTypesSupported                  map[ProofVariant]ProofType `json:"proof_types_supported"`
-	Display                              []LocalizedCredential      `json:"display"`
+	Display                              []LocalizedCredential      `json:"display,omitempty"`
 	Vct                                  *string                    `json:"vct,omitempty"`
-	Claims                               map[string]interface{}     `json:"claims,omitempty"`
 	Order                                []string                   `json:"order,omitempty"`
+	Claims                               []oauth.Claims             `json:"claims,omitempty"`
+	CredentialMetadata                   CredentialMetadata         `json:"credential_metadata,omitempty"`
 	///Out of OID Spec, but useful
 	Schema  map[string]interface{} `json:"schema,omitempty"` //json Schema representation of payload
 	Subject string                 `json:"topic,omitempty"`  // Subject of the credential within the system
+}
+
+type CredentialMetadata struct {
+	Claims  []oauth.Claims        `json:"claims,omitempty"`
+	Display []LocalizedCredential `json:"display,omitempty"`
 }
 
 type CredentialDefinition struct {
