@@ -46,7 +46,7 @@ type CredentialConfiguration struct {
 	Display                              []LocalizedCredential      `json:"display,omitempty"`
 	Vct                                  *string                    `json:"vct,omitempty"`
 	Order                                []string                   `json:"order,omitempty"`
-	Claims                               []oauth.Claims             `json:"claims,omitempty"`
+	Claims                               []MetadataClaim            `json:"claims,omitempty"`
 	CredentialMetadata                   CredentialMetadata         `json:"credential_metadata,omitempty"`
 	///Out of OID Spec, but useful
 	Schema  map[string]interface{} `json:"schema,omitempty"` //json Schema representation of payload
@@ -54,7 +54,7 @@ type CredentialConfiguration struct {
 }
 
 type CredentialMetadata struct {
-	Claims  []oauth.Claims        `json:"claims,omitempty"`
+	Claims  []oauth.Claim         `json:"claims,omitempty"`
 	Display []LocalizedCredential `json:"display,omitempty"`
 }
 
@@ -62,6 +62,11 @@ type CredentialDefinition struct {
 	Context           []string                     `json:"@context"`
 	Type              []string                     `json:"type"`
 	CredentialSubject map[string]CredentialSubject `json:"credentialSubject,omitempty"`
+}
+
+type MetadataClaim struct {
+	oauth.Claim
+	Display Display `json:"display,omitempty"`
 }
 
 type CredentialSubject struct {
