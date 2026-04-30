@@ -24,7 +24,7 @@ type Token struct {
 	ExpiresIn            int64                 `json:"expires_in"`
 	CNonce               string                `json:"c_nonce"`
 	CNonceExpiresIn      int64                 `json:"c_nonce_expires_in"`
-	AuthorizationDetails *AuthorizationDetails `json:"authorization_details,omitempty"`
+	AuthorizationDetails []AuthorizationDetails `json:"authorization_details,omitempty"`
 }
 
 type Claim struct {
