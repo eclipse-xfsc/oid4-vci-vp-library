@@ -13,15 +13,15 @@ import (
 
 type IssuerMetadata struct {
 	CredentialIssuer                  string                             `json:"credential_issuer"`
-	AuthorizationServers              []string                           `json:"authorization_servers"`
+	AuthorizationServers              []string                           `json:"authorization_servers,omitempty"`
 	CredentialEndpoint                string                             `json:"credential_endpoint"`
-	BatchCredentialEndpoint           *string                            `json:"batch_credential_endpoint"`
-	DeferredCredentialEndpoint        *string                            `json:"deferred_credential_endpoint"`
-	NotificationEndpoint              *string                            `json:"notification_endpoint"`
-	CredentialResponseEncryption      CredentialRespEnc                  `json:"credential_response_encryption"`
-	Display                           []LocalizedCredential              `json:"display"`
-	CredentialIdentifiersSupported    bool                               `json:"credential_identifiers_supported"`
-	SignedMetadata                    *string                            `json:"signed_metadata"`
+	BatchCredentialEndpoint           *string                            `json:"batch_credential_endpoint,omitempty"`
+	DeferredCredentialEndpoint        *string                            `json:"deferred_credential_endpoint,omitempty"`
+	NotificationEndpoint              *string                            `json:"notification_endpoint,omitempty"`
+	CredentialResponseEncryption      *CredentialRespEnc                 `json:"credential_response_encryption,omitempty"`
+	Display                           []LocalizedCredential              `json:"display,omitempty"`
+	CredentialIdentifiersSupported    bool                               `json:"credential_identifiers_supported,omitempty"`
+	SignedMetadata                    *string                            `json:"signed_metadata,omitempty"`
 	CredentialConfigurationsSupported map[string]CredentialConfiguration `json:"credential_configurations_supported"`
 }
 
@@ -38,19 +38,22 @@ type CredentialConfigurationIdentifier struct {
 
 type CredentialConfiguration struct {
 	Format                               string                     `json:"format"`
-	Scope                                string                     `json:"scope"`
-	CryptographicBindingMethodsSupported []string                   `json:"cryptographic_binding_methods_supported"`
-	CredentialSigningAlgValuesSupported  []string                   `json:"credential_signing_alg_values_supported"`
+	Scope                                string                     `json:"scope,omitempty"`
+	CryptographicBindingMethodsSupported []string                   `json:"cryptographic_binding_methods_supported,omitempty"`
+	CredentialSigningAlgValuesSupported  []string                   `json:"credential_signing_alg_values_supported,omitempty"`
 	CredentialDefinition                 CredentialDefinition       `json:"credential_definition"`
-	ProofTypesSupported                  map[ProofVariant]ProofType `json:"proof_types_supported"`
+	ProofTypesSupported                  map[ProofVariant]ProofType `json:"proof_types_supported,omitempty"`
 	Display                              []LocalizedCredential      `json:"display,omitempty"`
 	Vct                                  *string                    `json:"vct,omitempty"`
 	Order                                []string                   `json:"order,omitempty"`
 	Claims                               []MetadataClaim            `json:"claims,omitempty"`
-	CredentialMetadata                   CredentialMetadata         `json:"credential_metadata,omitempty"`
+	CredentialMetadata                   *CredentialMetadata        `json:"credential_metadata,omitempty"`
 	///Out of OID Spec, but useful
-	Schema  map[string]interface{} `json:"schema,omitempty"` //json Schema representation of payload
-	Subject string                 `json:"topic,omitempty"`  // Subject of the credential within the system
+	// Internal-only: well-known-service strips these in HTTP responses to wallets
+	// (see GetIssuer with withInternal=false). They remain in NATS replies so
+	// issuer-service can route credential requests using Subject as the topic.
+	Schema  map[string]interface{} `json:"schema,omitempty"`
+	Subject string                 `json:"topic,omitempty"`
 }
 
 type CredentialMetadata struct {
