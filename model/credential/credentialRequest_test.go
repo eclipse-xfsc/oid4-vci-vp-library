@@ -25,6 +25,20 @@ const jwkPrivKey = `{
     "n": "uPsD5or7uGVyy9WmTc6amWzpGIZzsKCceUOh2slnptD8W8od1unUMws3uFZAGSYDaBceSQ7Wy5i8IJYJAY9Zu_GYGPMr3rfhzc4E1XVmuqhSO8QdrscnLxjn-dIWrUmzFXAnUKFaY0tMH6mrZug3RNNKHSrbs1bisZrsqZXGM0vTEGyL3sxjwd7gi4DM7Y7Xvv9qcdDTEpZ7t14QfucNl6V1FuVaNGwzst4Be9KDCNRTywIJ_Uogyy8OW9pKCVBpPJP9e_O607hAEgCE9nEGffnnZEVzs5QNu_PagUuZJABzsWZ4q--p8CVbzj1gED7DmLMNnUOxzlZ90ewFvDrdcw"
 }`
 
+func TestEmptyProof(t *testing.T) {
+
+	proof := Proof{
+		ProofType: "",
+		Jwt:       nil,
+	}
+
+	err := proof.CheckProof("hhh", "jjj", nil)
+
+	if err != nil {
+		t.Error()
+	}
+}
+
 func TestNonceValidationWithProof(t *testing.T) {
 
 	proofTypesSupported := map[ProofVariant]ProofType{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/config"
+	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/oauth"
 	jwtext "github.com/eclipse-xfsc/ssi-jwt/v2"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/sirupsen/logrus"
@@ -17,12 +18,16 @@ const (
 )
 
 type CredentialRequest struct {
-	Format               string                 `json:"format,omitempty"`
-	CredentialIdentifier string                 `json:"credential_identifier,omitempty"`
-	Proof                *Proof                 `json:"proof,omitempty"`
-	Vct                  *string                `json:"vct,omitempty"`
-	Claims               map[string]interface{} `json:"claims,omitempty"`
-	Order                []string               `json:"order,omitempty"`
+	///OID 1.0
+	CredentialConfigurationId string `json:"credential_configuration_id,omitempty"`
+	Proof                     *Proof `json:"proof,omitempty"`
+
+	//Draft13, not more used in 1.0
+	Format               string        `json:"format,omitempty"`
+	CredentialIdentifier string        `json:"credential_identifier,omitempty"`
+	Vct                  *string       `json:"vct,omitempty"`
+	Claims               []oauth.Claim `json:"claims,omitempty"`
+	Order                []string      `json:"order,omitempty"`
 }
 
 type Proof struct {
@@ -56,6 +61,11 @@ func (proof *Proof) GetProof() *string {
 func (proof *Proof) CheckProof(audience string, cNonce string, proofTypesSupported map[ProofVariant]ProofType) error {
 
 	logrus.Debug(proof)
+
+	//no proofcheck required for this
+	if len(proofTypesSupported) == 0 {
+		return nil
+	}
 
 	_, ok := proofTypesSupported[ProofVariant(proof.ProofType)]
 

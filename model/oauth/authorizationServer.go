@@ -24,13 +24,19 @@ type Token struct {
 	ExpiresIn            int64                 `json:"expires_in"`
 	CNonce               string                `json:"c_nonce"`
 	CNonceExpiresIn      int64                 `json:"c_nonce_expires_in"`
-	AuthorizationDetails *AuthorizationDetails `json:"authorization_details,omitempty"`
+	AuthorizationDetails []AuthorizationDetails `json:"authorization_details,omitempty"`
+}
+
+type Claim struct {
+	Path      string `json:"path"`
+	Mandatory bool   `json:"mandatory"`
 }
 
 type AuthorizationDetails struct {
 	Type                      string   `json:"type"`
 	CredentialConfigurationID string   `json:"credential_configuration_id"`
-	CredentialIdentifiers     []string `json:"credential_identifiers"`
+	CredentialIdentifiers     []string `json:"credential_identifiers,omitempty"`
+	Claims                    []Claim  `json:"claims,omitempty"`
 }
 
 type OpenIdConfiguration struct {
