@@ -1,11 +1,9 @@
 package credential
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/types"
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
@@ -26,138 +24,405 @@ const jwkPrivKey = `{
     "n": "uPsD5or7uGVyy9WmTc6amWzpGIZzsKCceUOh2slnptD8W8od1unUMws3uFZAGSYDaBceSQ7Wy5i8IJYJAY9Zu_GYGPMr3rfhzc4E1XVmuqhSO8QdrscnLxjn-dIWrUmzFXAnUKFaY0tMH6mrZug3RNNKHSrbs1bisZrsqZXGM0vTEGyL3sxjwd7gi4DM7Y7Xvv9qcdDTEpZ7t14QfucNl6V1FuVaNGwzst4Be9KDCNRTywIJ_Uogyy8OW9pKCVBpPJP9e_O607hAEgCE9nEGffnnZEVzs5QNu_PagUuZJABzsWZ4q--p8CVbzj1gED7DmLMNnUOxzlZ90ewFvDrdcw"
 }`
 
-func TestEmptyProof(t *testing.T) {
-
-	proof := Proof{
-		ProofType: "",
-		Jwt:       nil,
+func TestCredentialRequestWithoutProofTypesSupported(t *testing.T) {
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
 	}
 
-	err := proof.CheckProof("hhh", "jjj", nil)
+	valid, err := req.CheckRequestValid("", "", nil)
 
 	if err != nil {
-		t.Error()
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
 	}
 }
 
-func TestNonceValidationWithProof(t *testing.T) {
+func TestCredentialRequestWithCredentialIdentifier(t *testing.T) {
+	req := CredentialRequest{
+		CredentialIdentifier: "credential-123",
+	}
 
+	valid, err := req.CheckRequestValid("", "", nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
+	}
+}
+
+func TestCredentialRequestWithIdentifierAndConfigurationID(t *testing.T) {
+	req := CredentialRequest{
+		CredentialIdentifier:      "credential-123",
+		CredentialConfigurationID: "UniversityDegreeCredential",
+	}
+
+	valid, err := req.CheckRequestValid("", "", nil)
+
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestCredentialRequestWithoutIdentifierOrConfigurationID(t *testing.T) {
+	req := CredentialRequest{}
+
+	valid, err := req.CheckRequestValid("", "", nil)
+
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestCredentialRequestRequiresProof(t *testing.T) {
 	proofTypesSupported := map[ProofVariant]ProofType{
-		ProofTypeJWT: ProofType{
-			ProofSigningAlgValuesSupported: []string{"ES256"},
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
 		},
 	}
 
-	tok, err := jwt.NewBuilder().
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected missing proof error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
+		},
+	}
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		"123456",
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				signedProof,
+			},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"123456",
+		proofTypesSupported,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
+	}
+}
+
+func TestJWTProofValidationWithWrongAudience(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
+		},
+	}
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		"123456",
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				signedProof,
+			},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://different-issuer.example",
+		"123456",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected audience validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithWrongNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
+		},
+	}
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		"123456",
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				signedProof,
+			},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"wrong-nonce",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected nonce validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithoutNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
+		},
+	}
+
+	signedProof := createJWTProofWithoutNonce(
+		t,
+		"https://issuer.example",
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				signedProof,
+			},
+		},
+	}
+
+	// Empty cNonce means this issuer does not require nonce validation.
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"",
+		proofTypesSupported,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
+	}
+}
+
+func TestMultipleProofTypesRejected(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
+		},
+		ProofTypeAttestation: {
+			ProofSigningAlgValuesSupported: []string{
+				"PS256",
+			},
+		},
+	}
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				"jwt",
+			},
+			Attestation: []string{
+				"attestation",
+			},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected multiple proof types to be rejected")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestUnsupportedJWTProofRejected(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeDIVP: {},
+	}
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				"jwt",
+			},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected unsupported proof type error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func createJWTProof(
+	t *testing.T,
+	audience string,
+	nonce string,
+) string {
+	t.Helper()
+
+	token, err := jwt.NewBuilder().
 		Issuer("test.com").
 		IssuedAt(time.Now()).
-		Audience([]string{"audience"}).
+		Audience([]string{audience}).
+		Claim("nonce", nonce).
 		Build()
-	tok.Set("nonce", "123456")
 
 	if err != nil {
-		fmt.Printf("failed to build token: %s\n", err)
-		return
+		t.Fatalf("failed to build token: %v", err)
 	}
-	privkey, err := jwk.ParseKey([]byte(jwkPrivKey))
+
+	return signJWTProof(t, token)
+}
+
+func createJWTProofWithoutNonce(
+	t *testing.T,
+	audience string,
+) string {
+	t.Helper()
+
+	token, err := jwt.NewBuilder().
+		Issuer("test.com").
+		IssuedAt(time.Now()).
+		Audience([]string{audience}).
+		Build()
 
 	if err != nil {
-		t.Error()
+		t.Fatalf("failed to build token: %v", err)
 	}
 
-	pubkey, _ := privkey.PublicKey()
+	return signJWTProof(t, token)
+}
+
+func signJWTProof(
+	t *testing.T,
+	token jwt.Token,
+) string {
+	t.Helper()
+
+	privKey, err := jwk.ParseKey([]byte(jwkPrivKey))
+	if err != nil {
+		t.Fatalf("failed to parse private key: %v", err)
+	}
+
+	pubKey, err := privKey.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to create public key: %v", err)
+	}
 
 	headers := jws.NewHeaders()
-	headers.Set("jwk", pubkey)
 
-	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.PS256, privkey, jws.WithProtectedHeaders(headers)))
-
-	if err != nil || signed == nil || len(signed) == 0 {
-		t.Error()
-		return
-	}
-	p := string(signed)
-	proof := Proof{
-		ProofType: ProofTypeJWT,
-		Jwt:       &p,
+	if err := headers.Set("typ", "openid4vci-proof+jwt"); err != nil {
+		t.Fatalf("failed to set typ header: %v", err)
 	}
 
-	err2 := proof.CheckProof("audience", "123456", proofTypesSupported)
-
-	if err2 != nil {
-		t.Error()
+	if err := headers.Set("jwk", pubKey); err != nil {
+		t.Fatalf("failed to set jwk header: %v", err)
 	}
 
-	err2 = proof.CheckProof("bla", "123456", proofTypesSupported)
+	signed, err := jwt.Sign(
+		token,
+		jwt.WithKey(
+			jwa.PS256,
+			privKey,
+			jws.WithProtectedHeaders(headers),
+		),
+	)
 
-	if err2 == nil {
-		t.Error()
+	if err != nil {
+		t.Fatalf("failed to sign JWT proof: %v", err)
 	}
 
-	err2 = proof.CheckProof("audience", "1", proofTypesSupported)
-
-	if err2 == nil {
-		t.Error()
-	}
-}
-
-func TestSdJwtProfilingWithoutProofTypesSupported(t *testing.T) {
-
-	s := "test"
-
-	//Test vct with optional claims, no prooftype
-	validReq := CredentialRequest{
-		Format: string(types.SDJWT),
-		Vct:    &s,
+	if len(signed) == 0 {
+		t.Fatal("signed JWT proof is empty")
 	}
 
-	b, err := validReq.CheckRequestValid("", "", nil)
-
-	if err != nil && !b {
-		t.Error()
-	}
-
-}
-
-func TestSdJwtProfilingWithIdentifier(t *testing.T) {
-
-	s := "test"
-
-	//Test vct with optional claims, no prooftype
-	validReq := CredentialRequest{
-		Format:               string(types.SDJWT),
-		Vct:                  &s,
-		CredentialIdentifier: "xxxx",
-	}
-
-	b, err := validReq.CheckRequestValid("", "", nil)
-
-	if err == nil || b {
-		t.Error()
-	}
-
-}
-
-func TestSdJwtProfilingWithJWTProofTypesSupported(t *testing.T) {
-
-	proofTypesSupported := map[ProofVariant]ProofType{
-		ProofTypeJWT: ProofType{
-			ProofSigningAlgValuesSupported: []string{"ES256"},
-		},
-	}
-
-	s := "test"
-
-	//Test vct with optional claims, no prooftype
-	validReq := CredentialRequest{
-		Format: string(types.SDJWT),
-		Vct:    &s,
-	}
-
-	b, err := validReq.CheckRequestValid("", "", proofTypesSupported)
-
-	if err != nil && !b {
-		t.Error()
-	}
-
+	return string(signed)
 }
