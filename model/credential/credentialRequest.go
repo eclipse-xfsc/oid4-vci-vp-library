@@ -136,7 +136,7 @@ func (request *CredentialRequest) CheckRequestValid(audience string, cNonce stri
 		}
 
 		if request.Format != "" {
-			if request.Format == "vc+sd-jwt" {
+			if request.Format == string(CredentialFormatSDJWT) {
 				if request.Vct == nil {
 					return false, errors.New("requested format has missing vct")
 				}
