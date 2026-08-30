@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/types"
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
@@ -106,7 +107,7 @@ func TestSdJwtProfilingWithoutProofTypesSupported(t *testing.T) {
 
 	//Test vct with optional claims, no prooftype
 	validReq := CredentialRequest{
-		Format: string(CredentialFormatSDJWT),
+		Format: string(types.SDJWT),
 		Vct:    &s,
 	}
 
@@ -124,7 +125,7 @@ func TestSdJwtProfilingWithIdentifier(t *testing.T) {
 
 	//Test vct with optional claims, no prooftype
 	validReq := CredentialRequest{
-		Format:               string(CredentialFormatSDJWT),
+		Format:               string(types.SDJWT),
 		Vct:                  &s,
 		CredentialIdentifier: "xxxx",
 	}
@@ -149,7 +150,7 @@ func TestSdJwtProfilingWithJWTProofTypesSupported(t *testing.T) {
 
 	//Test vct with optional claims, no prooftype
 	validReq := CredentialRequest{
-		Format: string(CredentialFormatSDJWT),
+		Format: string(types.SDJWT),
 		Vct:    &s,
 	}
 

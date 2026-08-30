@@ -14,14 +14,20 @@ type CredentialFormat string
 type PresentationFormat string
 
 const (
-	SDJWT   CredentialFormat = "vc+sd-jwt"
-	JWTVC   CredentialFormat = "jwt_vc"
-	LDPVC   CredentialFormat = "ldp_vc"
-	UNKNOWN CredentialFormat = "unknown"
+	SDJWT       CredentialFormat = "dc+sd-jwt"
+	JWTVC       CredentialFormat = "jwt_vc_json"
+	JWTVCJSONLD CredentialFormat = "jwt_vc_json-ld"
+	LDPVC       CredentialFormat = "ldp_vc"
+	MSOMDOC     CredentialFormat = "mso_mdoc"
+	UNKNOWN     CredentialFormat = "unknown"
 )
 
 const (
-	LDPVP PresentationFormat = "ldp_vp"
+	SDJWTVP     PresentationFormat = "dc+sd-jwt"
+	JWTVP       PresentationFormat = "jwt_vc_json"
+	JWTVPJSONLD PresentationFormat = "jwt_vc_json-ld"
+	LDPVP       PresentationFormat = "ldp_vp"
+	MSOMDOCVP   PresentationFormat = "mso_mdoc"
 )
 
 type Credential struct {

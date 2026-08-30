@@ -93,17 +93,6 @@ var ProofVariants = []ProofVariant{
 	"ldp_vc",
 }
 
-type CredentialFormat string
-
-const (
-	CredentialFormatSDJWT CredentialFormat = "dc+sd-jwt"
-	CredentialFormatMDoc  CredentialFormat = "mso_mdoc"
-
-	// Legacy / backwards compatibility
-	CredentialFormatJWTVCJSON CredentialFormat = "jwt_vc_json"
-	CredentialFormatLDPVC     CredentialFormat = "ldp_vc"
-)
-
 type LocalizedCredential struct {
 	Name            string         `json:"name"`
 	Locale          string         `json:"locale"`

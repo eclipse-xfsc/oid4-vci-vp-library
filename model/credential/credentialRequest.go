@@ -6,6 +6,7 @@ import (
 
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/config"
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/oauth"
+	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/types"
 	jwtext "github.com/eclipse-xfsc/ssi-jwt/v2"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/sirupsen/logrus"
@@ -136,7 +137,7 @@ func (request *CredentialRequest) CheckRequestValid(audience string, cNonce stri
 		}
 
 		if request.Format != "" {
-			if request.Format == string(CredentialFormatSDJWT) {
+			if request.Format == string(types.SDJWT) {
 				if request.Vct == nil {
 					return false, errors.New("requested format has missing vct")
 				}
