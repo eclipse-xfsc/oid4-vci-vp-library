@@ -12,143 +12,118 @@ import (
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/presentation"
 )
 
-// Backend for wallet-like functionality (matching + vp creation only)
-type RelyingPartyBackend interface {
+// WalletBackend contains application-specific wallet functionality.
+// OID4VP protocol objects are kept in this library; credential storage and
+// format-specific presentation creation remain behind this interface.
+type WalletBackend interface {
+	MatchCredentials(ctx context.Context, dcql *presentation.DCQLQuery) ([]presentation.FilterResult, error)
 
-	// Match credentials to PD or DCQL
-	MatchCredentials(ctx context.Context,
-		pd *presentation.PresentationDefinition,
-		dcql *presentation.DCQLQuery,
-	) ([]presentation.FilterResult, error)
-
-	// Create VP Token & presentation submission
 	CreateVPToken(ctx context.Context,
 		ar *presentation.AuthorizationRequest,
-		reqObj map[string]interface{},
 		selected []presentation.FilterResult,
-	) (vpToken string, presentationSubmission *presentation.PresentationSubmission, err error)
+	) (presentation.VPToken, error)
 }
 
+// RelyingPartyBackend is retained as a source-compatible name for callers that
+// already use NewRPService. New code should use WalletBackend.
+type RelyingPartyBackend = WalletBackend
+
 type RelyingPartyService struct {
-	backend    RelyingPartyBackend
+	backend    WalletBackend
 	httpClient *http.Client
 }
 
-func NewRPService(
-	backend RelyingPartyBackend,
-	httpClient *http.Client,
-) *RelyingPartyService {
-	return &RelyingPartyService{
-		backend:    backend,
-		httpClient: httpClient,
+type WalletService = RelyingPartyService
+
+func NewRPService(backend WalletBackend, httpClient *http.Client) *RelyingPartyService {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
 	}
+	return &RelyingPartyService{backend: backend, httpClient: httpClient}
 }
 
-// -----------------------------------------------------------------------------
-// PHASE 1: BeginFlow
-// -----------------------------------------------------------------------------
+func NewWalletService(backend WalletBackend, httpClient *http.Client) *WalletService {
+	return NewRPService(backend, httpClient)
+}
+
+// BeginFlow parses an OID4VP Authorization URL, resolves a JSON request object
+// when request_uri is present, validates the final OID4VP request, and asks the
+// wallet backend for matching credentials.
 func (service *RelyingPartyService) BeginFlow(
 	ctx context.Context,
 	rawAuthorizationURL string,
-) ([]presentation.FilterResult, *presentation.AuthorizationRequest, map[string]interface{}, error) {
-
-	//--------------------------------------------------------------------
-	// Parse Authorization URL
-	//--------------------------------------------------------------------
+) ([]presentation.FilterResult, *presentation.AuthorizationRequest, error) {
 	ar, err := service.ParseAuthorizationURL(rawAuthorizationURL)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
-	//--------------------------------------------------------------------
-	// Load RequestObject
-	//--------------------------------------------------------------------
-	var reqObj map[string]interface{}
-
-	switch {
-	case ar.RequestURI != "":
-		reqObj, err = service.FetchRequestObject(ctx, ar.RequestURI)
+	if ar.RequestURI != "" {
+		resolved, err := service.FetchAuthorizationRequest(ctx, ar.RequestURI, ar.RequestURIMethod, ar.WalletNonce)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
-
-	case ar.PresentationDefinitionURI != "":
-		pd, err := service.FetchPresentationDefinition(ctx, ar.PresentationDefinitionURI)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		reqObj = map[string]interface{}{"presentation_definition": pd}
-
-	default:
-		return nil, nil, nil, fmt.Errorf("no request_uri or pd_uri")
+		mergeAuthorizationRequest(ar, resolved)
 	}
 
-	//--------------------------------------------------------------------
-	// Extract PD/DCQL
-	//--------------------------------------------------------------------
-	if err := service.ResolvePresentationDefinition(ar, reqObj); err != nil {
-		return nil, nil, nil, err
+	if err := ar.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid authorization request: %w", err)
+	}
+	if ar.DCQLQuery == nil {
+		return nil, nil, fmt.Errorf("scope-based DCQL resolution is not implemented by this service")
 	}
 
-	//--------------------------------------------------------------------
-	// Credential Matching
-	//--------------------------------------------------------------------
-	matches, err := service.backend.MatchCredentials(ctx, ar.PresentationDefinition, ar.DCQLQuery)
+	matches, err := service.backend.MatchCredentials(ctx, ar.DCQLQuery)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-
-	return matches, ar, reqObj, nil
+	return matches, ar, nil
 }
 
-// -----------------------------------------------------------------------------
-// PHASE 2: ContinueFlow
-// -----------------------------------------------------------------------------
 func (service *RelyingPartyService) ContinueFlow(
 	ctx context.Context,
 	ar *presentation.AuthorizationRequest,
-	reqObj map[string]interface{},
 	selected []presentation.FilterResult,
-) (string, error) {
-
+) (presentation.VPToken, error) {
 	if len(selected) == 0 {
-		return "", fmt.Errorf("no credentials selected")
+		return nil, fmt.Errorf("no credentials selected")
+	}
+	if ar == nil || ar.DCQLQuery == nil {
+		return nil, fmt.Errorf("dcql authorization request is required")
 	}
 
-	vpToken, presSub, err := service.backend.CreateVPToken(ctx, ar, reqObj, selected)
+	vpToken, err := service.backend.CreateVPToken(ctx, ar, selected)
 	if err != nil {
-		return "", fmt.Errorf("vp token creation failed: %w", err)
+		return nil, fmt.Errorf("vp token creation failed: %w", err)
+	}
+	if err := vpToken.ValidateAgainst(ar.DCQLQuery); err != nil {
+		return nil, fmt.Errorf("invalid vp token: %w", err)
 	}
 
-	if err := service.DirectPost(ctx, ar.ResponseURI, ar.State, vpToken, presSub); err != nil {
-		return "", fmt.Errorf("direct_post failed: %w", err)
+	response := presentation.AuthorizationResponse{VPToken: vpToken, State: ar.State}
+	if err := service.DirectPost(ctx, ar.ResponseURI, response); err != nil {
+		return nil, fmt.Errorf("direct_post failed: %w", err)
 	}
-
 	return vpToken, nil
 }
 
-// -----------------------------------------------------------------------------
-// DirectPost implemented INSIDE the service
-// -----------------------------------------------------------------------------
 func (service *RelyingPartyService) DirectPost(
 	ctx context.Context,
 	responseURI string,
-	state string,
-	vpToken string,
-	presSub *presentation.PresentationSubmission,
+	response presentation.AuthorizationResponse,
 ) error {
-
 	if responseURI == "" {
 		return fmt.Errorf("response_uri missing")
+	}
+	vpToken, err := response.VPToken.JSONString()
+	if err != nil {
+		return fmt.Errorf("encode vp_token: %w", err)
 	}
 
 	form := url.Values{}
 	form.Set("vp_token", vpToken)
-	form.Set("state", state)
-
-	if presSub != nil {
-		bytes, _ := json.Marshal(presSub)
-		form.Set("presentation_submission", string(bytes))
+	if response.State != "" {
+		form.Set("state", response.State)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, responseURI, bytes.NewBufferString(form.Encode()))
@@ -162,18 +137,13 @@ func (service *RelyingPartyService) DirectPost(
 		return err
 	}
 	defer res.Body.Close()
-
 	if res.StatusCode >= 300 {
-		body, _ := io.ReadAll(res.Body)
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 64*1024))
 		return fmt.Errorf("http %d: %s", res.StatusCode, string(body))
 	}
-
 	return nil
 }
 
-// -----------------------------------------------------------------------------
-// Remaining helper functions unchanged
-// -----------------------------------------------------------------------------
 func (service *RelyingPartyService) ParseAuthorizationURL(raw string) (*presentation.AuthorizationRequest, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -181,49 +151,60 @@ func (service *RelyingPartyService) ParseAuthorizationURL(raw string) (*presenta
 	}
 	q := u.Query()
 
-	return &presentation.AuthorizationRequest{
-		ClientID:                  q.Get("client_id"),
-		State:                     q.Get("state"),
-		Nonce:                     q.Get("nonce"),
-		RequestURI:                q.Get("request_uri"),
-		PresentationDefinitionURI: q.Get("presentation_definition_uri"),
-		ResponseURI:               q.Get("response_uri"),
-		Scope:                     q.Get("scope"),
-		RawQuery:                  q.Encode(),
-	}, nil
+	ar := &presentation.AuthorizationRequest{
+		ClientID:         q.Get("client_id"),
+		ResponseType:     q.Get("response_type"),
+		ResponseMode:     q.Get("response_mode"),
+		State:            q.Get("state"),
+		Nonce:            q.Get("nonce"),
+		RequestURI:       q.Get("request_uri"),
+		RequestURIMethod: q.Get("request_uri_method"),
+		ResponseURI:      q.Get("response_uri"),
+		RedirectURI:      q.Get("redirect_uri"),
+		Scope:            q.Get("scope"),
+		WalletNonce:      q.Get("wallet_nonce"),
+		RawQuery:         q.Encode(),
+	}
+	if rawDCQL := q.Get("dcql_query"); rawDCQL != "" {
+		var dcql presentation.DCQLQuery
+		if err := json.Unmarshal([]byte(rawDCQL), &dcql); err != nil {
+			return nil, fmt.Errorf("parse dcql_query: %w", err)
+		}
+		ar.DCQLQuery = &dcql
+	}
+	return ar, nil
 }
 
-func (service *RelyingPartyService) FetchRequestObject(ctx context.Context, uri string) (map[string]interface{}, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := service.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-
-	body, _ := io.ReadAll(res.Body)
-
-	if res.StatusCode >= 300 {
-		return nil, fmt.Errorf("http %d: %s", res.StatusCode, string(body))
-	}
-
-	var obj map[string]interface{}
-	if err := json.Unmarshal(body, &obj); err != nil {
-		return nil, err
-	}
-	return obj, nil
-}
-
-func (service *RelyingPartyService) FetchPresentationDefinition(
+// FetchAuthorizationRequest resolves a request_uri that returns a JSON encoded
+// Authorization Request. Signed JWT Request Objects must be verified and decoded
+// by the caller/integration layer before using this JSON helper.
+func (service *RelyingPartyService) FetchAuthorizationRequest(
 	ctx context.Context,
 	uri string,
-) (*presentation.PresentationDefinition, error) {
+	method string,
+	walletNonce string,
+) (*presentation.AuthorizationRequest, error) {
+	if method == "" {
+		method = "get"
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	var req *http.Request
+	var err error
+	switch method {
+	case "get":
+		req, err = http.NewRequestWithContext(ctx, http.MethodGet, uri, nil)
+	case "post":
+		form := url.Values{}
+		if walletNonce != "" {
+			form.Set("wallet_nonce", walletNonce)
+		}
+		req, err = http.NewRequestWithContext(ctx, http.MethodPost, uri, bytes.NewBufferString(form.Encode()))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported request_uri_method %q", method)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -233,45 +214,35 @@ func (service *RelyingPartyService) FetchPresentationDefinition(
 		return nil, err
 	}
 	defer res.Body.Close()
-
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1024*1024))
+	if err != nil {
+		return nil, err
+	}
 	if res.StatusCode >= 300 {
 		return nil, fmt.Errorf("http %d: %s", res.StatusCode, string(body))
 	}
 
-	var pd presentation.PresentationDefinition
-	if err := json.Unmarshal(body, &pd); err != nil {
-		return nil, err
+	var ar presentation.AuthorizationRequest
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return nil, fmt.Errorf("request_uri response is not a JSON authorization request: %w", err)
 	}
-	return &pd, nil
+	return &ar, nil
 }
 
-func (service *RelyingPartyService) ResolvePresentationDefinition(
-	ar *presentation.AuthorizationRequest,
-	reqObj map[string]interface{},
-) error {
-
-	if pdRaw, ok := reqObj["presentation_definition"]; ok {
-		buf, _ := json.Marshal(pdRaw)
-		var pd presentation.PresentationDefinition
-		if err := json.Unmarshal(buf, &pd); err != nil {
-			return err
-		}
-		ar.PresentationDefinition = &pd
+func mergeAuthorizationRequest(target, source *presentation.AuthorizationRequest) {
+	rawQuery := target.RawQuery
+	requestURI := target.RequestURI
+	requestURIMethod := target.RequestURIMethod
+	walletNonce := target.WalletNonce
+	*target = *source
+	target.RawQuery = rawQuery
+	if target.RequestURI == "" {
+		target.RequestURI = requestURI
 	}
-
-	if dqRaw, ok := reqObj["dcql_query"]; ok {
-		buf, _ := json.Marshal(dqRaw)
-		var dq presentation.DCQLQuery
-		if err := json.Unmarshal(buf, &dq); err != nil {
-			return err
-		}
-		ar.DCQLQuery = &dq
+	if target.RequestURIMethod == "" {
+		target.RequestURIMethod = requestURIMethod
 	}
-
-	if ar.PresentationDefinition == nil && ar.DCQLQuery == nil {
-		return fmt.Errorf("no pd or dcql in request object")
+	if target.WalletNonce == "" {
+		target.WalletNonce = walletNonce
 	}
-
-	return nil
 }

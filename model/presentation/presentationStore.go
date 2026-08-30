@@ -12,10 +12,10 @@ type PresentationStore interface {
 	GetRequest(state string) (*AuthorizationRequest, bool, error)
 
 	// SaveVPToken stores a received vp_token for a given state
-	// together with optional presentation_submission JSON.
+	// together with the raw HTTP response body for auditing/format-specific processing.
 	SaveVPToken(state string, vpToken string, presentationSubmission []byte) error
 
-	// GetVPToken returns the stored vp_token and presentation_submission, if any.
+	// GetVPToken returns the stored vp_token and raw response body, if any.
 	// Returns (empty values, false, nil) if nothing is stored for the state.
 	GetVPToken(state string) (vpToken string, presentationSubmission []byte, exists bool, err error)
 

@@ -14,7 +14,8 @@ type CredentialFormat string
 type PresentationFormat string
 
 const (
-	SDJWT   CredentialFormat = "vc+sd-jwt"
+	SDJWT   CredentialFormat = "dc+sd-jwt"
+	MSOMDOC CredentialFormat = "mso_mdoc"
 	JWTVC   CredentialFormat = "jwt_vc"
 	LDPVC   CredentialFormat = "ldp_vc"
 	UNKNOWN CredentialFormat = "unknown"

@@ -7,252 +7,124 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/presentation"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// ---------------------------------------------------------------------------
-// MOCK BACKEND
-// ---------------------------------------------------------------------------
-
 type MockBackend struct {
-	MatchedCreds  []presentation.FilterResult
-	VpToken       string
-	VpTokenErr    error
-	DirectPostErr error
+	MatchedCreds []presentation.FilterResult
+	VPToken      presentation.VPToken
+	VPTokenErr   error
 }
 
-func (mb *MockBackend) MatchCredentials(
-	ctx context.Context,
-	pd *presentation.PresentationDefinition,
-	dcql *presentation.DCQLQuery,
-) ([]presentation.FilterResult, error) {
+func (mb *MockBackend) MatchCredentials(ctx context.Context, dcql *presentation.DCQLQuery) ([]presentation.FilterResult, error) {
 	return mb.MatchedCreds, nil
 }
 
 func (mb *MockBackend) CreateVPToken(
 	ctx context.Context,
 	ar *presentation.AuthorizationRequest,
-	reqObj map[string]interface{},
 	selected []presentation.FilterResult,
-) (string, *presentation.PresentationSubmission, error) {
-	if mb.VpTokenErr != nil {
-		return "", nil, mb.VpTokenErr
+) (presentation.VPToken, error) {
+	if mb.VPTokenErr != nil {
+		return nil, mb.VPTokenErr
 	}
-	return mb.VpToken, &presentation.PresentationSubmission{
-		Id: "presentation-submission",
-	}, nil
+	return mb.VPToken, nil
 }
-
-func (mb *MockBackend) DirectPost(
-	ctx context.Context,
-	responseURI string,
-	state string,
-	vpToken string,
-	presSub map[string]interface{},
-) error {
-	return mb.DirectPostErr
-}
-
-// ---------------------------------------------------------------------------
-// HTTP MOCKING
-// ---------------------------------------------------------------------------
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
-func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func newMockHTTPClient(responder func(*http.Request) (*http.Response, error)) http.Client {
+	return http.Client{Transport: roundTripperFunc(responder)}
 }
 
-func newMockHTTPClient(t *testing.T, responder func(*http.Request) (*http.Response, error)) http.Client {
-	return http.Client{
-		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
-			return responder(r)
-		}),
+func finalRequest() presentation.AuthorizationRequest {
+	return presentation.AuthorizationRequest{
+		ClientID:     "x509_san_dns:verifier.example",
+		ResponseType: "vp_token",
+		ResponseMode: "direct_post",
+		ResponseURI:  "https://verifier.example/response",
+		Nonce:        "nonce-1",
+		State:        "state-1",
+		DCQLQuery:    &presentation.DCQLQuery{Credentials: []presentation.CredentialQuery{{ID: "pid", Format: "dc+sd-jwt"}}},
 	}
 }
 
-// ---------------------------------------------------------------------------
-// HELPERS
-// ---------------------------------------------------------------------------
-
-// Fake PD (minimal)
-func fakePD() *presentation.PresentationDefinition {
-	return &presentation.PresentationDefinition{
-		Description: presentation.Description{
-			Id: "pd-test3",
-		},
-	}
-}
-
-// Fake RequestObject
-func fakeRequestObject() map[string]interface{} {
-	return map[string]interface{}{
-		"presentation_definition": map[string]interface{}{
-			"id": "pd-test",
-		},
-	}
-}
-
-// ---------------------------------------------------------------------------
-// TESTS
-// ---------------------------------------------------------------------------
-
-func TestBeginFlow_Success(t *testing.T) {
+func TestBeginFlowWithRequestURI(t *testing.T) {
 	ctx := context.Background()
+	backend := &MockBackend{MatchedCreds: []presentation.FilterResult{{Description: presentation.Description{Id: "pid"}}}}
+	request := finalRequest()
 
-	backend := &MockBackend{
-		MatchedCreds: []presentation.FilterResult{
-			presentation.FilterResult{
-				Description: presentation.Description{
-					Id:         "cred-1",
-					FormatType: "TestVC",
-				},
-			},
-		},
-	}
-
-	// Mock HTTP-Client: jede GET-Anfrage liefert fakeRequestObject()
-	mockClient := newMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
+	client := newMockHTTPClient(func(req *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, req.Method)
-		body, _ := json.Marshal(fakeRequestObject())
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
+		body, _ := json.Marshal(request)
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
 	})
+	service := NewWalletService(backend, &client)
 
-	rpService := NewRPService(backend, &mockClient)
-
-	// Fake request_uri – muss eine gültige URL sein
-	rawURL := "openid4vp://authorize?client_id=test&state=123&nonce=n1&request_uri=https%3A%2F%2Fexample.org%2Frequest"
-
-	matches, ar, reqObj, err := rpService.BeginFlow(ctx, rawURL)
-	assert.NoError(t, err)
-	assert.NotNil(t, ar)
-	assert.NotNil(t, reqObj)
-
-	assert.Equal(t, "test", ar.ClientID)
-	assert.Equal(t, "123", ar.State)
-
+	matches, ar, err := service.BeginFlow(ctx, "openid4vp://authorize?request_uri=https%3A%2F%2Fexample.org%2Frequest")
+	require.NoError(t, err)
+	require.NotNil(t, ar.DCQLQuery)
+	assert.Equal(t, request.ClientID, ar.ClientID)
 	assert.Len(t, matches, 1)
-	assert.Equal(t, "cred-1", matches[0].Id)
 }
 
-func TestBeginFlow_NoCredentials(t *testing.T) {
-	ctx := context.Background()
+func TestBeginFlowInlineDCQL(t *testing.T) {
+	backend := &MockBackend{}
+	service := NewWalletService(backend, &http.Client{})
+	query := `{"credentials":[{"id":"pid","format":"dc+sd-jwt"}]}`
+	raw := "openid4vp://authorize?client_id=client&response_type=vp_token&response_mode=direct_post&response_uri=" +
+		url.QueryEscape("https://verifier.example/response") + "&nonce=n&dcql_query=" + url.QueryEscape(query)
 
-	backend := &MockBackend{
-		MatchedCreds: []presentation.FilterResult{},
-	}
-
-	mockClient := newMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
-		body, _ := json.Marshal(fakeRequestObject())
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
-	})
-
-	rpService := NewRPService(backend, &mockClient)
-
-	rawURL := "openid4vp://authorize?request_uri=https%3A%2F%2Fexample.org%2Frequest"
-
-	_, _, _, err := rpService.BeginFlow(ctx, rawURL)
-	assert.Nil(t, err)
+	_, ar, err := service.BeginFlow(context.Background(), raw)
+	require.NoError(t, err)
+	require.NotNil(t, ar.DCQLQuery)
+	assert.Equal(t, "pid", ar.DCQLQuery.Credentials[0].ID)
 }
 
-func TestContinueFlow_Success(t *testing.T) {
-	ctx := context.Background()
-
-	backend := &MockBackend{
-		VpToken: "vp.jwt.mocked",
-	}
-
-	mockClient := newMockHTTPClient(t, func(req *http.Request) (*http.Response, error) {
-		body, _ := json.Marshal(fakeRequestObject())
-		return &http.Response{
-			StatusCode: 200,
-			Body:       io.NopCloser(bytes.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
+func TestContinueFlowDirectPostUsesFinalVPToken(t *testing.T) {
+	backend := &MockBackend{VPToken: presentation.VPToken{
+		"pid": []json.RawMessage{json.RawMessage(`"sd-jwt-presentation"`)},
+	}}
+	client := newMockHTTPClient(func(req *http.Request) (*http.Response, error) {
+		require.NoError(t, req.ParseForm())
+		assert.Equal(t, `{"pid":["sd-jwt-presentation"]}`, req.Form.Get("vp_token"))
+		assert.Equal(t, "state-1", req.Form.Get("state"))
+		assert.Empty(t, req.Form.Get("presentation_submission"))
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(nil)), Header: make(http.Header)}, nil
 	})
+	service := NewWalletService(backend, &client)
+	ar := finalRequest()
 
-	rpService := NewRPService(backend, &mockClient)
-
-	ar := &presentation.AuthorizationRequest{
-		ResponseURI: "https://verifier.example.org/callback",
-		State:       "123",
-	}
-
-	reqObj := fakeRequestObject()
-
-	selected := []presentation.FilterResult{
-		{
-			Description: presentation.Description{
-				Id:         "cred-123",
-				FormatType: "MyVC",
-			},
-		},
-	}
-
-	token, err := rpService.ContinueFlow(ctx, ar, reqObj, selected)
-
-	assert.NoError(t, err)
-	assert.Equal(t, "vp.jwt.mocked", token)
+	token, err := service.ContinueFlow(context.Background(), &ar, []presentation.FilterResult{{Description: presentation.Description{Id: "pid"}}})
+	require.NoError(t, err)
+	assert.Len(t, token["pid"], 1)
 }
 
-func TestContinueFlow_VPTokenCreationFails(t *testing.T) {
-	ctx := context.Background()
+func TestContinueFlowRejectsInvalidVPToken(t *testing.T) {
+	backend := &MockBackend{VPToken: presentation.VPToken{
+		"wrong": []json.RawMessage{json.RawMessage(`"presentation"`)},
+	}}
+	service := NewWalletService(backend, &http.Client{})
+	ar := finalRequest()
 
-	backend := &MockBackend{
-		VpTokenErr: errors.New("vp creation failed"),
-	}
-	httpClient := http.Client{}
-	rpService := NewRPService(backend, &httpClient)
+	_, err := service.ContinueFlow(context.Background(), &ar, []presentation.FilterResult{{Description: presentation.Description{Id: "pid"}}})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown credential query id")
+}
 
-	ar := &presentation.AuthorizationRequest{}
-	reqObj := fakeRequestObject()
+func TestContinueFlowVPTokenCreationFails(t *testing.T) {
+	backend := &MockBackend{VPTokenErr: errors.New("vp creation failed")}
+	service := NewWalletService(backend, &http.Client{})
+	ar := finalRequest()
 
-	_, err := rpService.ContinueFlow(ctx, ar, reqObj, []presentation.FilterResult{
-		presentation.FilterResult{
-			Description: presentation.Description{
-				Id: "c1",
-			},
-		},
-	})
-	assert.Error(t, err)
+	_, err := service.ContinueFlow(context.Background(), &ar, []presentation.FilterResult{{Description: presentation.Description{Id: "pid"}}})
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "vp creation failed")
-}
-
-func TestContinueFlow_DirectPostFails(t *testing.T) {
-	ctx := context.Background()
-
-	backend := &MockBackend{
-		VpToken:       "vp.jwt",
-		DirectPostErr: errors.New("post failed"),
-	}
-	httpClient := http.Client{}
-	rpService := NewRPService(backend, &httpClient)
-
-	ar := &presentation.AuthorizationRequest{
-		ResponseURI: "https://verifier.example.org/callback",
-		State:       "abc",
-	}
-
-	reqObj := fakeRequestObject()
-
-	_, err := rpService.ContinueFlow(ctx, ar, reqObj, []presentation.FilterResult{
-		presentation.FilterResult{
-			Description: presentation.Description{
-				Id: "c1",
-			},
-		},
-	})
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "post failed")
 }

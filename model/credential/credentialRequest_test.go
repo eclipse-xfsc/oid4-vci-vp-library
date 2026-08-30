@@ -106,7 +106,7 @@ func TestSdJwtProfilingWithoutProofTypesSupported(t *testing.T) {
 
 	//Test vct with optional claims, no prooftype
 	validReq := CredentialRequest{
-		Format: "vc+sd-jwt",
+		Format: "dc+sd-jwt",
 		Vct:    &s,
 	}
 
@@ -124,7 +124,7 @@ func TestSdJwtProfilingWithIdentifier(t *testing.T) {
 
 	//Test vct with optional claims, no prooftype
 	validReq := CredentialRequest{
-		Format:               "vc+sd-jwt",
+		Format:               "dc+sd-jwt",
 		Vct:                  &s,
 		CredentialIdentifier: "xxxx",
 	}
@@ -149,7 +149,7 @@ func TestSdJwtProfilingWithJWTProofTypesSupported(t *testing.T) {
 
 	//Test vct with optional claims, no prooftype
 	validReq := CredentialRequest{
-		Format: "vc+sd-jwt",
+		Format: "dc+sd-jwt",
 		Vct:    &s,
 	}
 

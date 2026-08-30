@@ -2,6 +2,7 @@ package oid4vp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -69,18 +70,29 @@ func (s *VerifierService) Authorize(ctx context.Context, requestDefinition strin
 	}
 
 	ar := &presentation.AuthorizationRequest{
-		ClientID:                  q.Get("client_id"),
-		ResponseType:              q.Get("response_type"),
-		ResponseMode:              q.Get("response_mode"),
-		PresentationDefinitionURI: q.Get("presentation_definition_uri"),
-		ResponseURI:               q.Get("response_uri"),
-		State:                     state,
-		Nonce:                     q.Get("nonce"),
-		Scope:                     q.Get("scope"),
-		RawQuery:                  parsed.RawQuery,
+		ClientID:         q.Get("client_id"),
+		ResponseType:     q.Get("response_type"),
+		ResponseMode:     q.Get("response_mode"),
+		ResponseURI:      q.Get("response_uri"),
+		RedirectURI:      q.Get("redirect_uri"),
+		State:            state,
+		Nonce:            q.Get("nonce"),
+		Scope:            q.Get("scope"),
+		RequestURI:       q.Get("request_uri"),
+		RequestURIMethod: q.Get("request_uri_method"),
+		RawQuery:         parsed.RawQuery,
+	}
+	if rawDCQL := q.Get("dcql_query"); rawDCQL != "" {
+		var dcql presentation.DCQLQuery
+		if err := json.Unmarshal([]byte(rawDCQL), &dcql); err != nil {
+			return nil, fmt.Errorf("invalid dcql_query in authorization URL: %w", err)
+		}
+		ar.DCQLQuery = &dcql
 	}
 
-	s.presentationStore.SaveRequest(state, ar)
+	if err := s.presentationStore.SaveRequest(state, ar); err != nil {
+		return nil, fmt.Errorf("store authorization request: %w", err)
+	}
 
 	// create request_uri for deep-link mode
 	var requestURI string
@@ -120,7 +132,8 @@ func (s *VerifierService) GetRequestObject(state string) (*presentation.Authoriz
 	return ar, nil
 }
 
-func (s *VerifierService) GetPresentationDefinition(state string) (*presentation.PresentationDefinition, error) {
+// GetDCQLQuery returns the DCQL query stored for a verifier session.
+func (s *VerifierService) GetDCQLQuery(state string) (*presentation.DCQLQuery, error) {
 	ar, ok, err := s.presentationStore.GetRequest(state)
 	if err != nil {
 		return nil, err
@@ -128,8 +141,10 @@ func (s *VerifierService) GetPresentationDefinition(state string) (*presentation
 	if !ok {
 		return nil, fmt.Errorf("unknown state")
 	}
-
-	return ar.PresentationDefinition, nil
+	if ar.DCQLQuery == nil {
+		return nil, fmt.Errorf("request has no dcql_query")
+	}
+	return ar.DCQLQuery, nil
 }
 
 func (s *VerifierService) ProcessResponse(
@@ -138,6 +153,25 @@ func (s *VerifierService) ProcessResponse(
 	vpToken string,
 	rawBody string,
 ) (*presentation.VerificationResult, error) {
+
+	// Validate the OID4VP 1.0 vp_token wire object against the DCQL query
+	// before invoking format-specific policy or external verification.
+	if vpToken != "" {
+		ar, ok, err := s.presentationStore.GetRequest(state)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, fmt.Errorf("unknown state")
+		}
+		var parsed presentation.VPToken
+		if err := json.Unmarshal([]byte(vpToken), &parsed); err != nil {
+			return nil, fmt.Errorf("vp_token is not a valid OID4VP JSON object: %w", err)
+		}
+		if err := parsed.ValidateAgainst(ar.DCQLQuery); err != nil {
+			return nil, fmt.Errorf("vp_token does not satisfy dcql_query: %w", err)
+		}
+	}
 
 	// optional: run local policy BEFORE forwarding
 	if s.policy != nil && vpToken != "" {
