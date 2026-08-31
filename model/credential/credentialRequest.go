@@ -1,9 +1,15 @@
 package credential
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/config"
 	jwtext "github.com/eclipse-xfsc/ssi-jwt/v2"
@@ -14,6 +20,11 @@ const (
 	ProofTypeJWT         ProofVariant = "jwt"
 	ProofTypeDIVP        ProofVariant = "di_vp"
 	ProofTypeAttestation ProofVariant = "attestation"
+)
+
+const (
+	DefaultNonceTTL       = 5 * time.Minute
+	MinimumNonceSecretLen = 32
 )
 
 type CredentialResponseEncryptionParameters struct {
@@ -74,9 +85,180 @@ type JWTKeyProofClaims struct {
 	Nonce string `json:"nonce,omitempty"`
 }
 
+// NoncePayload is the payload protected by the HMAC.
+//
+// JTI provides randomness and prevents two generated nonces from being
+// identical. Exp limits the lifetime of the nonce.
+//
+// Note: this does not provide one-time/replay protection by itself.
+// For strict one-time semantics the JTI additionally needs to be consumed
+// in a server-side store.
+type NoncePayload struct {
+	JTI      string `json:"jti"`
+	TenantID string `json:"tenant_id"`
+	Exp      int64  `json:"exp"`
+}
+
+// CreateNonce creates an opaque, HMAC-SHA256 protected nonce.
+//
+// Format:
+//
+//	base64url(payload).base64url(hmac)
+//
+// The returned value can be sent directly as c_nonce by the nonce endpoint.
+func CreateNonce(
+	secret string,
+	tenantID string,
+	ttl time.Duration,
+) (string, error) {
+
+	if len(secret) < MinimumNonceSecretLen {
+		return "", fmt.Errorf(
+			"nonce secret must contain at least %d characters",
+			MinimumNonceSecretLen,
+		)
+	}
+
+	if tenantID == "" {
+		return "", errors.New("tenant id is required")
+	}
+
+	if ttl <= 0 {
+		return "", errors.New("nonce TTL must be greater than zero")
+	}
+
+	jti, err := generateNonceJTI()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate nonce jti: %w", err)
+	}
+
+	payload := NoncePayload{
+		JTI:      jti,
+		TenantID: tenantID,
+		Exp:      time.Now().Add(ttl).Unix(),
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal nonce payload: %w", err)
+	}
+
+	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadBytes)
+
+	signature := signNonce(
+		[]byte(secret),
+		payloadEncoded,
+	)
+
+	signatureEncoded := base64.RawURLEncoding.EncodeToString(signature)
+
+	return payloadEncoded + "." + signatureEncoded, nil
+}
+
+// ValidateNonce verifies the HMAC signature and expiration of an opaque nonce.
+func ValidateNonce(
+	secret string,
+	tenantID string,
+	nonce string,
+) error {
+
+	if secret == "" {
+		return errors.New("nonce secret is missing")
+	}
+
+	if len(secret) < MinimumNonceSecretLen {
+		return fmt.Errorf(
+			"nonce secret must contain at least %d characters",
+			MinimumNonceSecretLen,
+		)
+	}
+
+	if tenantID == "" {
+		return errors.New("tenant id is required")
+	}
+
+	if nonce == "" {
+		return errors.New("nonce is missing")
+	}
+
+	parts := strings.Split(nonce, ".")
+	if len(parts) != 2 {
+		return errors.New("nonce has invalid format")
+	}
+
+	payloadEncoded := parts[0]
+	signatureEncoded := parts[1]
+
+	signature, err := base64.RawURLEncoding.DecodeString(signatureEncoded)
+	if err != nil {
+		return errors.New("nonce signature is invalid")
+	}
+
+	expectedSignature := signNonce(
+		[]byte(secret),
+		payloadEncoded,
+	)
+
+	if !hmac.Equal(signature, expectedSignature) {
+		return errors.New("nonce signature is invalid")
+	}
+
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadEncoded)
+	if err != nil {
+		return errors.New("nonce payload is invalid")
+	}
+
+	var payload NoncePayload
+
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		return errors.New("nonce payload is invalid")
+	}
+
+	if payload.JTI == "" {
+		return errors.New("nonce jti is missing")
+	}
+
+	if payload.TenantID == "" {
+		return errors.New("nonce tenant id is missing")
+	}
+
+	if payload.TenantID != tenantID {
+		return errors.New("nonce tenant id does not match")
+	}
+
+	if payload.Exp == 0 {
+		return errors.New("nonce expiration is missing")
+	}
+
+	if time.Now().Unix() >= payload.Exp {
+		return errors.New("nonce has expired")
+	}
+
+	return nil
+}
+
+func signNonce(secret []byte, payload string) []byte {
+	mac := hmac.New(sha256.New, secret)
+
+	_, _ = mac.Write([]byte(payload))
+
+	return mac.Sum(nil)
+}
+
+func generateNonceJTI() (string, error) {
+	value := make([]byte, 32)
+
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+
+	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
 func (request *CredentialRequest) CheckRequestValid(
 	audience string,
-	cNonce string,
+	tenantID string,
+	nonceSecret string,
 	proofTypesSupported map[ProofVariant]ProofType,
 ) (bool, error) {
 
@@ -102,7 +284,8 @@ func (request *CredentialRequest) CheckRequestValid(
 
 		if err := request.Proofs.CheckProofs(
 			audience,
-			cNonce,
+			tenantID,
+			nonceSecret,
 			proofTypesSupported,
 		); err != nil {
 			return false, err
@@ -120,7 +303,8 @@ func (request *CredentialRequest) CheckRequestValid(
 
 func (proofs *CredentialProofs) CheckProofs(
 	audience string,
-	cNonce string,
+	tenantID string,
+	nonceSecret string,
 	proofTypesSupported map[ProofVariant]ProofType,
 ) error {
 
@@ -160,7 +344,8 @@ func (proofs *CredentialProofs) CheckProofs(
 			if err := checkJWTProof(
 				proof,
 				audience,
-				cNonce,
+				tenantID,
+				nonceSecret,
 			); err != nil {
 				return err
 			}
@@ -195,7 +380,8 @@ func (proofs *CredentialProofs) CheckProofs(
 func checkJWTProof(
 	proof string,
 	audience string,
-	cNonce string,
+	tenantID string,
+	nonceSecret string,
 ) error {
 
 	if proof == "" {
@@ -215,14 +401,10 @@ func checkJWTProof(
 		)
 	}
 
-	// nonce is only required if the Credential Issuer uses a Nonce Endpoint.
-	//
-	// At this layer cNonce == "" means nonce validation is disabled.
-	if cNonce != "" {
+	if nonceSecret != "" {
 		options = append(
 			options,
 			jwt.WithRequiredClaim("nonce"),
-			jwt.WithClaimValue("nonce", cNonce),
 		)
 	}
 
@@ -238,7 +420,12 @@ func checkJWTProof(
 		return errors.New("JWT proof is invalid")
 	}
 
-	if err := checkJWTProofClaims(jToken, audience, cNonce); err != nil {
+	if err := checkJWTProofClaims(
+		jToken,
+		audience,
+		tenantID,
+		nonceSecret,
+	); err != nil {
 		return err
 	}
 
@@ -248,7 +435,8 @@ func checkJWTProof(
 func checkJWTProofClaims(
 	token jwt.Token,
 	audience string,
-	cNonce string,
+	tenantID string,
+	nonceSecret string,
 ) error {
 
 	issuedAt := token.IssuedAt()
@@ -278,7 +466,7 @@ func checkJWTProofClaims(
 		}
 	}
 
-	if cNonce != "" {
+	if nonceSecret != "" {
 		nonceValue, ok := token.Get("nonce")
 		if !ok {
 			return errors.New("JWT proof is missing nonce")
@@ -289,8 +477,15 @@ func checkJWTProofClaims(
 			return errors.New("JWT proof nonce must be a string")
 		}
 
-		if nonce != cNonce {
-			return errors.New("JWT proof nonce does not match")
+		if err := ValidateNonce(
+			nonceSecret,
+			tenantID,
+			nonce,
+		); err != nil {
+			return fmt.Errorf(
+				"JWT proof nonce is invalid: %w",
+				err,
+			)
 		}
 	}
 
