@@ -61,6 +61,24 @@ type CredentialRequest struct {
 	Proofs *CredentialProofs `json:"proofs,omitempty"`
 
 	CredentialResponseEncryption *CredentialResponseEncryptionParameters `json:"credential_response_encryption,omitempty"`
+
+	// Format is accepted for interoperability with wallet implementations
+	// using an older OID4VCI Credential Request structure.
+	// It MUST NOT be used for credential selection in the 1.0 flow.
+	Format string `json:"format,omitempty"`
+	// Proof is accepted for interoperability with wallet implementations
+	// using the legacy singular proof structure.
+	// It should be normalized into Proofs before further processing.
+	Proof *CredentialProof `json:"proof,omitempty"`
+}
+
+// CredentialProof represents the legacy singular proof structure used by
+
+// older OID4VCI wallet implementations.
+
+type CredentialProof struct {
+	ProofType string `json:"proof_type,omitempty"`
+	JWT       string `json:"jwt,omitempty"`
 }
 
 type CredentialProofs struct {
@@ -97,6 +115,32 @@ type NoncePayload struct {
 	JTI      string `json:"jti"`
 	TenantID string `json:"tenant_id"`
 	Exp      int64  `json:"exp"`
+}
+
+func (r *CredentialRequest) Normalize() {
+	if r == nil {
+		return
+	}
+
+	// Prefer the OID4VCI 1.0 proofs structure if it is already present.
+	if r.Proofs != nil {
+		return
+	}
+
+	if r.Proof == nil {
+		return
+	}
+
+	switch r.Proof.ProofType {
+	case "jwt":
+		if r.Proof.JWT != "" {
+			r.Proofs = &CredentialProofs{
+				JWT: []string{
+					r.Proof.JWT,
+				},
+			}
+		}
+	}
 }
 
 // CreateNonce creates an opaque, HMAC-SHA256 protected nonce.
