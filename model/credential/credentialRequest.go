@@ -70,6 +70,8 @@ type CredentialRequest struct {
 	// using the legacy singular proof structure.
 	// It should be normalized into Proofs before further processing.
 	Proof *CredentialProof `json:"proof,omitempty"`
+	// Legacy / wallet interoperability (WaltID)
+	VCT string `json:"vct,omitempty"`
 }
 
 // CredentialProof represents the legacy singular proof structure used by
