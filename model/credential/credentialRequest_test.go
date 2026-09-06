@@ -1,11 +1,10 @@
 package credential
 
 import (
-	"fmt"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/types"
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jws"
@@ -26,138 +25,693 @@ const jwkPrivKey = `{
     "n": "uPsD5or7uGVyy9WmTc6amWzpGIZzsKCceUOh2slnptD8W8od1unUMws3uFZAGSYDaBceSQ7Wy5i8IJYJAY9Zu_GYGPMr3rfhzc4E1XVmuqhSO8QdrscnLxjn-dIWrUmzFXAnUKFaY0tMH6mrZug3RNNKHSrbs1bisZrsqZXGM0vTEGyL3sxjwd7gi4DM7Y7Xvv9qcdDTEpZ7t14QfucNl6V1FuVaNGwzst4Be9KDCNRTywIJ_Uogyy8OW9pKCVBpPJP9e_O607hAEgCE9nEGffnnZEVzs5QNu_PagUuZJABzsWZ4q--p8CVbzj1gED7DmLMNnUOxzlZ90ewFvDrdcw"
 }`
 
-func TestEmptyProof(t *testing.T) {
+const (
+	testNonceSecret = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!!"
+	testTenantID    = "tenant-1"
+)
 
-	proof := Proof{
-		ProofType: "",
-		Jwt:       nil,
+func TestCredentialRequestWithoutProofTypesSupported(t *testing.T) {
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
 	}
 
-	err := proof.CheckProof("hhh", "jjj", nil)
+	valid, err := req.CheckRequestValid("", testTenantID, "", nil)
 
 	if err != nil {
-		t.Error()
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
 	}
 }
 
-func TestNonceValidationWithProof(t *testing.T) {
+func TestCredentialRequestWithCredentialIdentifier(t *testing.T) {
+	req := CredentialRequest{
+		CredentialIdentifier: "credential-123",
+	}
 
+	valid, err := req.CheckRequestValid("", testTenantID, "", nil)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
+	}
+}
+
+func TestCredentialRequestWithIdentifierAndConfigurationID(t *testing.T) {
+	req := CredentialRequest{
+		CredentialIdentifier:      "credential-123",
+		CredentialConfigurationID: "UniversityDegreeCredential",
+	}
+
+	valid, err := req.CheckRequestValid("", testTenantID, "", nil)
+
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestCredentialRequestWithoutIdentifierOrConfigurationID(t *testing.T) {
+	req := CredentialRequest{}
+
+	valid, err := req.CheckRequestValid("", testTenantID, "", nil)
+
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestCredentialRequestRequiresProof(t *testing.T) {
 	proofTypesSupported := map[ProofVariant]ProofType{
-		ProofTypeJWT: ProofType{
-			ProofSigningAlgValuesSupported: []string{"ES256"},
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
 		},
 	}
 
-	tok, err := jwt.NewBuilder().
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		"",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected missing proof error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	nonce := createTestNonce(t, testTenantID)
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		nonce,
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		testNonceSecret,
+		proofTypesSupported,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
+	}
+}
+
+func TestJWTProofValidationWithWrongAudience(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	nonce := createTestNonce(t, testTenantID)
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		nonce,
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://different-issuer.example",
+		testTenantID,
+		testNonceSecret,
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected audience validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithWrongNonceSecret(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	nonce := createTestNonce(t, testTenantID)
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		nonce,
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmnopqrstuvwxyz!!",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected nonce validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithWrongTenant(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	nonce := createTestNonce(t, testTenantID)
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		nonce,
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		"tenant-2",
+		testNonceSecret,
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected tenant validation error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithTamperedNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	nonce := createTestNonce(t, testTenantID)
+
+	parts := strings.Split(nonce, ".")
+	if len(parts) != 2 {
+		t.Fatalf("unexpected nonce format: %s", nonce)
+	}
+
+	parts[0] = parts[0] + "A"
+
+	tamperedNonce := strings.Join(parts, ".")
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		tamperedNonce,
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		testNonceSecret,
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected tampered nonce to be rejected")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithExpiredNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	nonce, err := CreateNonce(
+		testNonceSecret,
+		testTenantID,
+		time.Nanosecond,
+	)
+	if err != nil {
+		t.Fatalf("failed to create nonce: %v", err)
+	}
+
+	time.Sleep(time.Millisecond)
+
+	signedProof := createJWTProof(
+		t,
+		"https://issuer.example",
+		nonce,
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		testNonceSecret,
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected expired nonce to be rejected")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationMissingNonceWhenNonceEnabled(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	signedProof := createJWTProofWithoutNonce(
+		t,
+		"https://issuer.example",
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		testNonceSecret,
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected missing nonce error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestJWTProofValidationWithoutNonce(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	signedProof := createJWTProofWithoutNonce(
+		t,
+		"https://issuer.example",
+	)
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{signedProof},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		"",
+		proofTypesSupported,
+	)
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !valid {
+		t.Fatal("expected request to be valid")
+	}
+}
+
+func TestCreateAndValidateNonce(t *testing.T) {
+	nonce, err := CreateNonce(
+		testNonceSecret,
+		testTenantID,
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("failed to create nonce: %v", err)
+	}
+
+	if nonce == "" {
+		t.Fatal("expected nonce to be generated")
+	}
+
+	if err := ValidateNonce(
+		testNonceSecret,
+		testTenantID,
+		nonce,
+	); err != nil {
+		t.Fatalf("expected nonce to be valid: %v", err)
+	}
+}
+
+func TestValidateNonceRejectsWrongTenant(t *testing.T) {
+	nonce := createTestNonce(t, testTenantID)
+
+	err := ValidateNonce(
+		testNonceSecret,
+		"tenant-2",
+		nonce,
+	)
+
+	if err == nil {
+		t.Fatal("expected wrong tenant to be rejected")
+	}
+}
+
+func TestCreateNonceGeneratesDifferentValues(t *testing.T) {
+	nonce1 := createTestNonce(t, testTenantID)
+	nonce2 := createTestNonce(t, testTenantID)
+
+	if nonce1 == nonce2 {
+		t.Fatal("expected generated nonces to be different")
+	}
+}
+
+func TestCreateNonceRejectsShortSecret(t *testing.T) {
+	_, err := CreateNonce(
+		"too-short",
+		testTenantID,
+		time.Minute,
+	)
+
+	if err == nil {
+		t.Fatal("expected short nonce secret to be rejected")
+	}
+}
+
+func TestCreateNonceRejectsEmptyTenant(t *testing.T) {
+	_, err := CreateNonce(
+		testNonceSecret,
+		"",
+		time.Minute,
+	)
+
+	if err == nil {
+		t.Fatal("expected empty tenant id to be rejected")
+	}
+}
+
+func TestValidateNonceRejectsShortSecret(t *testing.T) {
+	nonce := createTestNonce(t, testTenantID)
+
+	err := ValidateNonce(
+		"too-short",
+		testTenantID,
+		nonce,
+	)
+
+	if err == nil {
+		t.Fatal("expected short nonce secret to be rejected")
+	}
+}
+
+func TestValidateNonceRejectsEmptyTenant(t *testing.T) {
+	nonce := createTestNonce(t, testTenantID)
+
+	err := ValidateNonce(
+		testNonceSecret,
+		"",
+		nonce,
+	)
+
+	if err == nil {
+		t.Fatal("expected empty tenant id to be rejected")
+	}
+}
+
+func TestValidateNonceRejectsInvalidFormat(t *testing.T) {
+	err := ValidateNonce(
+		testNonceSecret,
+		testTenantID,
+		"this-is-not-a-valid-nonce",
+	)
+
+	if err == nil {
+		t.Fatal("expected invalid nonce format to be rejected")
+	}
+}
+
+func TestMultipleProofTypesRejected(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeJWT: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+		ProofTypeAttestation: {
+			ProofSigningAlgValuesSupported: []string{"PS256"},
+		},
+	}
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{
+				"jwt",
+			},
+			Attestation: []string{
+				"attestation",
+			},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		"",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected multiple proof types to be rejected")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func TestUnsupportedJWTProofRejected(t *testing.T) {
+	proofTypesSupported := map[ProofVariant]ProofType{
+		ProofTypeDIVP: {},
+	}
+
+	req := CredentialRequest{
+		CredentialConfigurationID: "UniversityDegreeCredential",
+		Proofs: &CredentialProofs{
+			JWT: []string{"jwt"},
+		},
+	}
+
+	valid, err := req.CheckRequestValid(
+		"https://issuer.example",
+		testTenantID,
+		"",
+		proofTypesSupported,
+	)
+
+	if err == nil {
+		t.Fatal("expected unsupported proof type error")
+	}
+
+	if valid {
+		t.Fatal("expected request to be invalid")
+	}
+}
+
+func createTestNonce(
+	t *testing.T,
+	tenantID string,
+) string {
+	t.Helper()
+
+	nonce, err := CreateNonce(
+		testNonceSecret,
+		tenantID,
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatalf("failed to create nonce: %v", err)
+	}
+
+	return nonce
+}
+
+func createJWTProof(
+	t *testing.T,
+	audience string,
+	nonce string,
+) string {
+	t.Helper()
+
+	token, err := jwt.NewBuilder().
 		Issuer("test.com").
 		IssuedAt(time.Now()).
-		Audience([]string{"audience"}).
+		Audience([]string{audience}).
+		Claim("nonce", nonce).
 		Build()
-	tok.Set("nonce", "123456")
 
 	if err != nil {
-		fmt.Printf("failed to build token: %s\n", err)
-		return
+		t.Fatalf("failed to build token: %v", err)
 	}
-	privkey, err := jwk.ParseKey([]byte(jwkPrivKey))
+
+	return signJWTProof(t, token)
+}
+
+func createJWTProofWithoutNonce(
+	t *testing.T,
+	audience string,
+) string {
+	t.Helper()
+
+	token, err := jwt.NewBuilder().
+		Issuer("test.com").
+		IssuedAt(time.Now()).
+		Audience([]string{audience}).
+		Build()
 
 	if err != nil {
-		t.Error()
+		t.Fatalf("failed to build token: %v", err)
 	}
 
-	pubkey, _ := privkey.PublicKey()
+	return signJWTProof(t, token)
+}
+
+func signJWTProof(
+	t *testing.T,
+	token jwt.Token,
+) string {
+	t.Helper()
+
+	privKey, err := jwk.ParseKey([]byte(jwkPrivKey))
+	if err != nil {
+		t.Fatalf("failed to parse private key: %v", err)
+	}
+
+	pubKey, err := privKey.PublicKey()
+	if err != nil {
+		t.Fatalf("failed to create public key: %v", err)
+	}
 
 	headers := jws.NewHeaders()
-	headers.Set("jwk", pubkey)
 
-	signed, err := jwt.Sign(tok, jwt.WithKey(jwa.PS256, privkey, jws.WithProtectedHeaders(headers)))
-
-	if err != nil || signed == nil || len(signed) == 0 {
-		t.Error()
-		return
-	}
-	p := string(signed)
-	proof := Proof{
-		ProofType: ProofTypeJWT,
-		Jwt:       &p,
+	if err := headers.Set("typ", "openid4vci-proof+jwt"); err != nil {
+		t.Fatalf("failed to set typ header: %v", err)
 	}
 
-	err2 := proof.CheckProof("audience", "123456", proofTypesSupported)
-
-	if err2 != nil {
-		t.Error()
+	if err := headers.Set("jwk", pubKey); err != nil {
+		t.Fatalf("failed to set jwk header: %v", err)
 	}
 
-	err2 = proof.CheckProof("bla", "123456", proofTypesSupported)
+	signed, err := jwt.Sign(
+		token,
+		jwt.WithKey(
+			jwa.PS256,
+			privKey,
+			jws.WithProtectedHeaders(headers),
+		),
+	)
 
-	if err2 == nil {
-		t.Error()
+	if err != nil {
+		t.Fatalf("failed to sign JWT proof: %v", err)
 	}
 
-	err2 = proof.CheckProof("audience", "1", proofTypesSupported)
-
-	if err2 == nil {
-		t.Error()
-	}
-}
-
-func TestSdJwtProfilingWithoutProofTypesSupported(t *testing.T) {
-
-	s := "test"
-
-	//Test vct with optional claims, no prooftype
-	validReq := CredentialRequest{
-		Format: string(types.SDJWT),
-		Vct:    &s,
+	if len(signed) == 0 {
+		t.Fatal("signed JWT proof is empty")
 	}
 
-	b, err := validReq.CheckRequestValid("", "", nil)
-
-	if err != nil && !b {
-		t.Error()
-	}
-
-}
-
-func TestSdJwtProfilingWithIdentifier(t *testing.T) {
-
-	s := "test"
-
-	//Test vct with optional claims, no prooftype
-	validReq := CredentialRequest{
-		Format:               string(types.SDJWT),
-		Vct:                  &s,
-		CredentialIdentifier: "xxxx",
-	}
-
-	b, err := validReq.CheckRequestValid("", "", nil)
-
-	if err == nil || b {
-		t.Error()
-	}
-
-}
-
-func TestSdJwtProfilingWithJWTProofTypesSupported(t *testing.T) {
-
-	proofTypesSupported := map[ProofVariant]ProofType{
-		ProofTypeJWT: ProofType{
-			ProofSigningAlgValuesSupported: []string{"ES256"},
-		},
-	}
-
-	s := "test"
-
-	//Test vct with optional claims, no prooftype
-	validReq := CredentialRequest{
-		Format: string(types.SDJWT),
-		Vct:    &s,
-	}
-
-	b, err := validReq.CheckRequestValid("", "", proofTypesSupported)
-
-	if err != nil && !b {
-		t.Error()
-	}
-
+	return string(signed)
 }
