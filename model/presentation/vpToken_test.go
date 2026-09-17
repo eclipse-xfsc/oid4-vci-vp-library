@@ -6,7 +6,7 @@ import (
 )
 
 func TestVPTokenWireFormatAndValidation(t *testing.T) {
-	query := &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "dc+sd-jwt"}}}
+	query := &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}}}}
 	token := VPToken{"pid": []json.RawMessage{json.RawMessage(`"eyJhbGciOi..."`)}}
 
 	if err := token.ValidateAgainst(query); err != nil {
@@ -22,7 +22,7 @@ func TestVPTokenWireFormatAndValidation(t *testing.T) {
 }
 
 func TestVPTokenRejectsMultipleWhenNotRequested(t *testing.T) {
-	query := &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "dc+sd-jwt"}}}
+	query := &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}}}}
 	token := VPToken{"pid": []json.RawMessage{json.RawMessage(`"one"`), json.RawMessage(`"two"`)}}
 	if err := token.ValidateAgainst(query); err == nil {
 		t.Fatal("expected multiple presentations to be rejected")
@@ -32,8 +32,8 @@ func TestVPTokenRejectsMultipleWhenNotRequested(t *testing.T) {
 func TestVPTokenCredentialSets(t *testing.T) {
 	query := &DCQLQuery{
 		Credentials: []CredentialQuery{
-			{ID: "pid", Format: "dc+sd-jwt"},
-			{ID: "other_pid", Format: "dc+sd-jwt"},
+			{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}},
+			{ID: "other_pid", Format: "jwt_vc_json", Meta: map[string]any{}},
 		},
 		CredentialSets: []CredentialSetQuery{{Options: [][]string{{"pid"}, {"other_pid"}}}},
 	}

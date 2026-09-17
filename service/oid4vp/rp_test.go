@@ -36,6 +36,14 @@ func (mb *MockBackend) CreateVPToken(
 	return mb.VPToken, nil
 }
 
+type mockRequestVerifier struct {
+	request *presentation.AuthorizationRequest
+}
+
+func (m mockRequestVerifier) VerifyRequestObject(ctx context.Context, compact, expectedClientID, walletNonce string) (*presentation.AuthorizationRequest, error) {
+	return m.request, nil
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
@@ -52,7 +60,7 @@ func finalRequest() presentation.AuthorizationRequest {
 		ResponseURI:  "https://verifier.example/response",
 		Nonce:        "nonce-1",
 		State:        "state-1",
-		DCQLQuery:    &presentation.DCQLQuery{Credentials: []presentation.CredentialQuery{{ID: "pid", Format: "dc+sd-jwt"}}},
+		DCQLQuery:    &presentation.DCQLQuery{Credentials: []presentation.CredentialQuery{{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}}}},
 	}
 }
 
@@ -63,12 +71,13 @@ func TestBeginFlowWithRequestURI(t *testing.T) {
 
 	client := newMockHTTPClient(func(req *http.Request) (*http.Response, error) {
 		assert.Equal(t, http.MethodGet, req.Method)
-		body, _ := json.Marshal(request)
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(body)), Header: make(http.Header)}, nil
+		h := make(http.Header)
+		h.Set("Content-Type", "application/oauth-authz-req+jwt")
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewBufferString("signed.request.object")), Header: h}, nil
 	})
-	service := NewWalletService(backend, &client)
+	service := NewWalletService(backend, &client).WithRequestObjectVerifier(mockRequestVerifier{request: &request})
 
-	matches, ar, err := service.BeginFlow(ctx, "openid4vp://authorize?request_uri=https%3A%2F%2Fexample.org%2Frequest")
+	matches, ar, err := service.BeginFlow(ctx, "openid4vp://authorize?client_id="+url.QueryEscape(request.ClientID)+"&request_uri=https%3A%2F%2Fexample.org%2Frequest")
 	require.NoError(t, err)
 	require.NotNil(t, ar.DCQLQuery)
 	assert.Equal(t, request.ClientID, ar.ClientID)
@@ -78,7 +87,7 @@ func TestBeginFlowWithRequestURI(t *testing.T) {
 func TestBeginFlowInlineDCQL(t *testing.T) {
 	backend := &MockBackend{}
 	service := NewWalletService(backend, &http.Client{})
-	query := `{"credentials":[{"id":"pid","format":"dc+sd-jwt"}]}`
+	query := `{"credentials":[{"id":"pid","format":"jwt_vc_json","meta":{}}]}`
 	raw := "openid4vp://authorize?client_id=client&response_type=vp_token&response_mode=direct_post&response_uri=" +
 		url.QueryEscape("https://verifier.example/response") + "&nonce=n&dcql_query=" + url.QueryEscape(query)
 
@@ -97,7 +106,9 @@ func TestContinueFlowDirectPostUsesFinalVPToken(t *testing.T) {
 		assert.Equal(t, `{"pid":["sd-jwt-presentation"]}`, req.Form.Get("vp_token"))
 		assert.Equal(t, "state-1", req.Form.Get("state"))
 		assert.Empty(t, req.Form.Get("presentation_submission"))
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader(nil)), Header: make(http.Header)}, nil
+		h := make(http.Header)
+		h.Set("Content-Type", "application/json")
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewBufferString("{}")), Header: h}, nil
 	})
 	service := NewWalletService(backend, &client)
 	ar := finalRequest()

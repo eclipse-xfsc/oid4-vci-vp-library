@@ -56,7 +56,7 @@ func TestClaimsPathPointerJSONRoundTrip(t *testing.T) {
 func TestDCQLValidateRejectsUnknownReferences(t *testing.T) {
 	q := DCQLQuery{
 		Credentials: []CredentialQuery{{
-			ID: "pid", Format: "dc+sd-jwt",
+			ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{},
 			Claims:    []ClaimQuery{{ID: "name", Path: ClaimsPathPointer{"given_name"}}},
 			ClaimSets: [][]string{{"missing"}},
 		}},
@@ -66,7 +66,7 @@ func TestDCQLValidateRejectsUnknownReferences(t *testing.T) {
 	}
 
 	q = DCQLQuery{
-		Credentials:    []CredentialQuery{{ID: "pid", Format: "dc+sd-jwt"}},
+		Credentials:    []CredentialQuery{{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}}},
 		CredentialSets: []CredentialSetQuery{{Options: [][]string{{"missing"}}}},
 	}
 	if err := q.Validate(); err == nil {
@@ -79,7 +79,7 @@ func TestEvaluateCredentialQueryTypedValues(t *testing.T) {
 		"credentialSubject": map[string]any{"age": 25.0, "active": true},
 	})
 	q := CredentialQuery{
-		ID: "cred", Format: "ldp_vc",
+		ID: "cred", Format: "ldp_vc", Meta: map[string]any{},
 		Claims: []ClaimQuery{
 			{Path: ClaimsPathPointer{"credentialSubject", "age"}, Values: []any{25.0}},
 			{Path: ClaimsPathPointer{"credentialSubject", "active"}, Values: []any{true}},
@@ -110,12 +110,14 @@ func TestEvaluateCredentialQuerySDJWTMetadata(t *testing.T) {
 func TestDCQLQueryFilter(t *testing.T) {
 	credentials := map[string]any{
 		"cred-1": map[string]any{
+			"@context":          []any{"https://www.w3.org/ns/credentials/v2"},
+			"type":              []any{"VerifiableCredential"},
 			"issuer":            "did:example:123",
 			"credentialSubject": map[string]any{"age": 30.0},
 		},
 	}
 	query := DCQLQuery{Credentials: []CredentialQuery{{
-		ID: "q1", Format: "ldp_vc",
+		ID: "q1", Format: "ldp_vc", Meta: map[string]any{},
 		Claims: []ClaimQuery{{Path: ClaimsPathPointer{"credentialSubject", "age"}, Values: []any{30.0}}},
 	}}}
 

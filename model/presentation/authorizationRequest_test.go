@@ -9,7 +9,7 @@ func TestAuthorizationRequestFinalDCQLValidation(t *testing.T) {
 		ResponseMode: "direct_post",
 		ResponseURI:  "https://verifier.example/response",
 		Nonce:        "n-123",
-		DCQLQuery:    &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "dc+sd-jwt"}}},
+		DCQLQuery:    &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}}}},
 	}
 	if err := req.Validate(); err != nil {
 		t.Fatalf("valid request rejected: %v", err)

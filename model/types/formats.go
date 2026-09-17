@@ -14,20 +14,18 @@ type CredentialFormat string
 type PresentationFormat string
 
 const (
-	SDJWT       CredentialFormat = "dc+sd-jwt"
-	JWTVC       CredentialFormat = "jwt_vc_json"
-	JWTVCJSONLD CredentialFormat = "jwt_vc_json-ld"
-	LDPVC       CredentialFormat = "ldp_vc"
-	MSOMDOC     CredentialFormat = "mso_mdoc"
-	UNKNOWN     CredentialFormat = "unknown"
+	SDJWT   CredentialFormat = "dc+sd-jwt"
+	JWTVC   CredentialFormat = "jwt_vc_json"
+	LDPVC   CredentialFormat = "ldp_vc"
+	MSOMDOC CredentialFormat = "mso_mdoc"
+	UNKNOWN CredentialFormat = "unknown"
 )
 
 const (
-	SDJWTVP     PresentationFormat = "dc+sd-jwt"
-	JWTVP       PresentationFormat = "jwt_vc_json"
-	JWTVPJSONLD PresentationFormat = "jwt_vc_json-ld"
-	LDPVP       PresentationFormat = "ldp_vp"
-	MSOMDOCVP   PresentationFormat = "mso_mdoc"
+	SDJWTVP   PresentationFormat = "dc+sd-jwt"
+	JWTVP     PresentationFormat = "jwt_vc_json"
+	LDPVP     PresentationFormat = "ldp_vp"
+	MSOMDOCVP PresentationFormat = "mso_mdoc"
 )
 
 type Credential struct {
@@ -49,9 +47,11 @@ func CheckFormat(credential interface{}) (*Credential, error) {
 	m, ok := credential.(map[string]interface{})
 
 	if ok {
+		if !looksLikeW3CObject(m) {
+			return &c, errors.New("JSON object is not recognizable as a W3C Verifiable Credential")
+		}
 		c.Format = LDPVC
 		c.Json = m
-		logrus.Info(credential)
 		return &c, nil
 	} else {
 
@@ -64,10 +64,11 @@ func CheckFormat(credential interface{}) (*Credential, error) {
 			err := json.Unmarshal([]byte(s), &j)
 
 			if err == nil {
+				if !looksLikeW3CObject(j) {
+					return &c, errors.New("JSON object is not recognizable as a W3C Verifiable Credential")
+				}
 				c.Format = LDPVC
 				c.Json = j
-				logrus.Error(err)
-				logrus.Info(s)
 				return &c, nil
 			}
 
@@ -111,4 +112,31 @@ func CheckFormat(credential interface{}) (*Credential, error) {
 	}
 
 	return &c, errors.ErrUnsupported
+}
+
+func looksLikeW3CObject(m map[string]interface{}) bool {
+	if _, ok := m["@context"]; !ok {
+		return false
+	}
+	t, ok := m["type"]
+	if !ok {
+		return false
+	}
+	switch v := t.(type) {
+	case string:
+		return v == "VerifiableCredential" || v == "VerifiablePresentation"
+	case []interface{}:
+		for _, x := range v {
+			if x == "VerifiableCredential" || x == "VerifiablePresentation" {
+				return true
+			}
+		}
+	case []string:
+		for _, x := range v {
+			if x == "VerifiableCredential" || x == "VerifiablePresentation" {
+				return true
+			}
+		}
+	}
+	return false
 }

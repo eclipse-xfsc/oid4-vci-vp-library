@@ -27,6 +27,13 @@ type PolicyClient interface {
 	VerifyVPToken(ctx context.Context, vpToken string) error
 }
 
+// OID4VPPresentationVerifier is the preferred verifier policy contract for OID4VP 1.0.
+// Implementations verify signatures/proofs, issuer trust, holder binding, nonce/client_id
+// binding, status, requested claims, format metadata and transaction-data binding.
+type OID4VPPresentationVerifier interface {
+	VerifyOID4VPPresentation(ctx context.Context, request *presentation.AuthorizationRequest, vpToken presentation.VPToken) error
+}
+
 type VerifierService struct {
 	backend           VerifierBackend
 	presentationStore presentation.PresentationStore
@@ -173,9 +180,18 @@ func (s *VerifierService) ProcessResponse(
 		}
 	}
 
-	// optional: run local policy BEFORE forwarding
+	// Run format-specific cryptographic/policy verification before forwarding.
 	if s.policy != nil && vpToken != "" {
-		if err := s.policy.VerifyVPToken(ctx, vpToken); err != nil {
+		ar, _, _ := s.presentationStore.GetRequest(state)
+		if v, ok := s.policy.(OID4VPPresentationVerifier); ok {
+			var parsed presentation.VPToken
+			if err := json.Unmarshal([]byte(vpToken), &parsed); err != nil {
+				return nil, err
+			}
+			if err := v.VerifyOID4VPPresentation(ctx, ar, parsed); err != nil {
+				return nil, fmt.Errorf("policy rejected OID4VP presentation: %w", err)
+			}
+		} else if err := s.policy.VerifyVPToken(ctx, vpToken); err != nil {
 			return nil, fmt.Errorf("policy rejected vp_token: %w", err)
 		}
 	}

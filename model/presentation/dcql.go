@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 
 	"github.com/eclipse-xfsc/oid4-vci-vp-library/model/types"
 )
@@ -114,14 +115,20 @@ type DCQLQuery struct {
 	CredentialSets []CredentialSetQuery `json:"credential_sets,omitempty"`
 }
 
+type TrustedAuthoritiesQuery struct {
+	Type   string   `json:"type"`
+	Values []string `json:"values"`
+}
+
 type CredentialQuery struct {
-	ID                                string         `json:"id"`
-	Format                            string         `json:"format"`
-	Meta                              map[string]any `json:"meta,omitempty"`
-	Claims                            []ClaimQuery   `json:"claims,omitempty"`
-	ClaimSets                         [][]string     `json:"claim_sets,omitempty"`
-	Multiple                          *bool          `json:"multiple,omitempty"`
-	RequireCryptographicHolderBinding *bool          `json:"require_cryptographic_holder_binding,omitempty"`
+	ID                                string                    `json:"id"`
+	Format                            string                    `json:"format"`
+	Meta                              map[string]any            `json:"meta"`
+	TrustedAuthorities                []TrustedAuthoritiesQuery `json:"trusted_authorities,omitempty"`
+	Claims                            []ClaimQuery              `json:"claims,omitempty"`
+	ClaimSets                         [][]string                `json:"claim_sets,omitempty"`
+	Multiple                          *bool                     `json:"multiple,omitempty"`
+	RequireCryptographicHolderBinding *bool                     `json:"require_cryptographic_holder_binding,omitempty"`
 }
 
 type ClaimQuery struct {
@@ -141,6 +148,8 @@ type DCQLFilterResult struct {
 	Credentials []FilterResult
 }
 
+var dcqlIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
 func (q *DCQLQuery) Validate() error {
 	if q == nil || len(q.Credentials) == 0 {
 		return errors.New("dcql_query must contain at least one credential query")
@@ -149,8 +158,8 @@ func (q *DCQLQuery) Validate() error {
 	ids := make(map[string]struct{}, len(q.Credentials))
 	for i := range q.Credentials {
 		cq := &q.Credentials[i]
-		if cq.ID == "" {
-			return fmt.Errorf("credential query %d: id is required", i)
+		if !dcqlIDPattern.MatchString(cq.ID) {
+			return fmt.Errorf("credential query %d: id must match [A-Za-z0-9_-]+", i)
 		}
 		if _, exists := ids[cq.ID]; exists {
 			return fmt.Errorf("credential query id %q is not unique", cq.ID)
@@ -159,17 +168,52 @@ func (q *DCQLQuery) Validate() error {
 		if cq.Format == "" {
 			return fmt.Errorf("credential query %q: format is required", cq.ID)
 		}
+		if cq.Meta == nil {
+			return fmt.Errorf("credential query %q: meta is required (use an empty object when unconstrained)", cq.ID)
+		}
+		if cq.Format == string(types.SDJWT) {
+			v, ok := cq.Meta["vct_values"]
+			if !ok || !nonEmptyStringArray(v) {
+				return fmt.Errorf("credential query %q: dc+sd-jwt meta.vct_values must be a non-empty string array", cq.ID)
+			}
+		}
+		for j, ta := range cq.TrustedAuthorities {
+			if ta.Type == "" || len(ta.Values) == 0 {
+				return fmt.Errorf("credential query %q trusted_authorities[%d]: type and non-empty values are required", cq.ID, j)
+			}
+			for _, v := range ta.Values {
+				if v == "" {
+					return fmt.Errorf("credential query %q trusted_authorities[%d]: values must not contain empty strings", cq.ID, j)
+				}
+			}
+		}
 
 		claimIDs := map[string]struct{}{}
+		claimPaths := map[string]struct{}{}
 		for j, claim := range cq.Claims {
 			if err := claim.Path.Validate(); err != nil {
 				return fmt.Errorf("credential query %q claim %d: %w", cq.ID, j, err)
 			}
+			pathJSON, _ := json.Marshal(claim.Path)
+			if _, exists := claimPaths[string(pathJSON)]; exists {
+				return fmt.Errorf("credential query %q: same claim path must not be requested more than once", cq.ID)
+			}
+			claimPaths[string(pathJSON)] = struct{}{}
 			if claim.ID != "" {
+				if !dcqlIDPattern.MatchString(claim.ID) {
+					return fmt.Errorf("credential query %q: claim id %q must match [A-Za-z0-9_-]+", cq.ID, claim.ID)
+				}
 				if _, exists := claimIDs[claim.ID]; exists {
 					return fmt.Errorf("credential query %q: claim id %q is not unique", cq.ID, claim.ID)
 				}
 				claimIDs[claim.ID] = struct{}{}
+			}
+		}
+		if len(cq.ClaimSets) > 0 {
+			for j, claim := range cq.Claims {
+				if claim.ID == "" {
+					return fmt.Errorf("credential query %q claim %d: id is required when claim_sets is present", cq.ID, j)
+				}
 			}
 		}
 		for _, set := range cq.ClaimSets {
@@ -360,4 +404,32 @@ func containsJSONValue(container any, expected any) bool {
 		return valuesEqual(container, expected)
 	}
 	return false
+}
+
+func nonEmptyStringArray(v any) bool {
+	switch a := v.(type) {
+	case []string:
+		if len(a) == 0 {
+			return false
+		}
+		for _, s := range a {
+			if s == "" {
+				return false
+			}
+		}
+		return true
+	case []any:
+		if len(a) == 0 {
+			return false
+		}
+		for _, x := range a {
+			s, ok := x.(string)
+			if !ok || s == "" {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
