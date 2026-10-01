@@ -13,11 +13,11 @@ type PresentationStore interface {
 
 	// SaveVPToken stores a received vp_token for a given state
 	// together with the raw HTTP response body for auditing/format-specific processing.
-	SaveVPToken(state string, vpToken string, presentationSubmission []byte) error
+	SaveVPToken(state string, vpToken string, rawResponse []byte) error
 
 	// GetVPToken returns the stored vp_token and raw response body, if any.
 	// Returns (empty values, false, nil) if nothing is stored for the state.
-	GetVPToken(state string) (vpToken string, presentationSubmission []byte, exists bool, err error)
+	GetVPToken(state string) (vpToken string, rawResponse []byte, exists bool, err error)
 
 	// MarkStatus sets a verification status ("pending", "received", "success", "failed")
 	// and optionally details from the verification backend.

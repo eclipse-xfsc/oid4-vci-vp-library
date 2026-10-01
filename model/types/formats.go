@@ -11,7 +11,6 @@ import (
 )
 
 type CredentialFormat string
-type PresentationFormat string
 
 const (
 	SDJWT   CredentialFormat = "dc+sd-jwt"
@@ -19,13 +18,6 @@ const (
 	LDPVC   CredentialFormat = "ldp_vc"
 	MSOMDOC CredentialFormat = "mso_mdoc"
 	UNKNOWN CredentialFormat = "unknown"
-)
-
-const (
-	SDJWTVP   PresentationFormat = "dc+sd-jwt"
-	JWTVP     PresentationFormat = "jwt_vc_json"
-	LDPVP     PresentationFormat = "ldp_vp"
-	MSOMDOCVP PresentationFormat = "mso_mdoc"
 )
 
 type Credential struct {

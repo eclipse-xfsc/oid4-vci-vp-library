@@ -143,6 +143,24 @@ type CredentialSetQuery struct {
 	Purpose  any        `json:"purpose,omitempty"`
 }
 
+type Description struct {
+	Id         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	Purpose    string `json:"purpose,omitempty"`
+	FormatType string `json:"format"`
+}
+
+type CredentialResult struct {
+	Id   string `json:"id,omitempty"`
+	Type string `json:"type"`
+	Data any    `json:"data"`
+}
+
+type FilterResult struct {
+	Description `json:"description"`
+	Credentials map[string]CredentialResult `json:"credentials"`
+}
+
 type DCQLFilterResult struct {
 	QueryID     string
 	Credentials []FilterResult

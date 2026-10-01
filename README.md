@@ -2,7 +2,7 @@
 
 Go models and helpers used by XFSC services for **OpenID for Verifiable Credential Issuance (OpenID4VCI)** and **OpenID for Verifiable Presentations (OpenID4VP)** flows.
 
-The current `oidvci10` branch contains the OpenID4VCI 1.0 model updates. It replaces the previous README statement that described the library as a partial Draft 13 implementation.
+The current `oidvci10` branch contains the OpenID4VCI 1.0 model updates. It contains the OpenID4VCI 1.0 model updates.
 
 > **Note:** OpenID4VCI 1.0 support is actively evolving. The library also keeps selected legacy fields for interoperability with wallet implementations that still use older request structures. Consumers should prefer the 1.0 structures documented below.
 
@@ -151,7 +151,7 @@ Relevant protocol error values include `invalid_credential_request`, `unknown_cr
 
 ## OpenID4VP 1.0 Final support
 
-This package targets **OpenID for Verifiable Presentations 1.0 Final**. The protocol model uses DCQL and the final OID4VP response representation. Presentation Exchange structures remain in the repository for legacy integrations, but they are not the request model for OID4VP 1.0 Final.
+This package targets **OpenID for Verifiable Presentations 1.0 Final**. The protocol model uses DCQL and the OID4VP 1.0 Final response representation. Presentation requests and responses use the OID4VP 1.0 Final DCQL model.
 
 ### Supported final credential format identifiers
 
@@ -169,9 +169,9 @@ The OID4VP 1.0 data model recognizes the format identifiers defined by the Final
 `AuthorizationRequest.Validate()` applies the following protocol rules represented by this library:
 
 - `client_id` is required and is parsed as an OID4VP Client Identifier. Supported standard prefixes are `pre-registered`, `redirect_uri`, `openid_federation`, `verifier_attestation`, `decentralized_identifier`, `x509_san_dns`, and `x509_hash`.
-- `response_type` is required. A presentation request uses `vp_token`; `nonce` is required whenever `vp_token` is requested.
+- `response_type` is required. Supported values are `vp_token`, `vp_token id_token` (in either order), and `code`; `nonce` is required for every authorization request.
 - A presentation request must resolve to a DCQL query. The model rejects simultaneous `scope` and `dcql_query` because a request must not express the same DCQL request through both mechanisms.
-- `response_mode` defaults to `fragment` for `vp_token` when omitted.
+- `response_mode` is required; it is never inferred when omitted.
 - `direct_post` and `direct_post.jwt` require `response_uri`.
 - `response_uri` and `redirect_uri` must not both be present.
 - `request_uri_method` is only valid when `request_uri` is present and is restricted to the case-sensitive values `get` and `post`.
@@ -330,7 +330,7 @@ helper/                 HTTP request helpers
 model/credential/       OID4VCI offers, metadata, requests and responses
 model/oauth/            OAuth authorization server and authorization_details models
 model/token/            token response models
-model/presentation/     OID4VP / Presentation Exchange models
+model/presentation/     OID4VP 1.0 Final / DCQL models
 model/types/            shared credential/presentation formats and response types
 ```
 
@@ -350,7 +350,7 @@ Issuer implementations must validate credential requests and key proofs against 
 
 Some compatibility fields intentionally remain in the models for wallets that have not yet migrated completely to OpenID4VCI 1.0. Compatibility input should be normalized at the protocol boundary and the 1.0 representation should be used internally wherever possible.
 
-When adding new protocol functionality, prefer the final OpenID4VCI 1.0 field names and structures instead of extending legacy Draft-based representations.
+When adding new protocol functionality, use the final OpenID4VCI 1.0 and OID4VP 1.0 field names and structures.
 
 ## Development
 
