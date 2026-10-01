@@ -225,6 +225,7 @@ const sdjwtCredential3 = `eyJ0eXAiOiJzZCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJmaXJzdG5hb
 
 const credential = `{
 	"@context":[],
+	"type":["VerifiableCredential"],
 	"credentialSubject":{
 		"dob":"12222"
 	},
@@ -233,18 +234,24 @@ const credential = `{
 }`
 
 const credential2 = `{
+	"@context":[],
+	"type":["VerifiableCredential"],
 	"credentialSubject":{
 		"xyz":"12222"
 	}
 }`
 
 const credential3 = `{
+    "@context":[],
+    "type":["VerifiableCredential"],
 	"credentialSubject":{
 		"dateOfBirth":"12222"
 	}
 }`
 
 const credential4 = `{
+    "@context":[],
+    "type":["VerifiableCredential"],
 	"credentialSubject":{
 		"dateOfBirth":"12222",
 		"xyz":"111"
@@ -252,13 +259,17 @@ const credential4 = `{
 }`
 
 const credential5 = `{
+    "@context":[],
+    "type":["VerifiableCredential"],
 	"credentialSubject":{
 		"dateOfBirth":"12222",
 		"name":"joe"
 	}
 }`
 
-const credential6 = `{
+const credential6 = `{ 
+    "@context":[],
+    "type":["VerifiableCredential"],
 	"credentialSubjectInvalid":{
 		"dateOfBirth":"12222",
 		"name":"joe"
