@@ -96,6 +96,20 @@ func (s *VerifierService) Authorize(ctx context.Context, requestDefinition strin
 		}
 		ar.DCQLQuery = &dcql
 	}
+	if rawMeta := q.Get("client_metadata"); rawMeta != "" {
+		var metadata presentation.VerifierMetadata
+		if err := json.Unmarshal([]byte(rawMeta), &metadata); err != nil {
+			return nil, fmt.Errorf("invalid client_metadata in authorization URL: %w", err)
+		}
+		ar.ClientMetadata = &metadata
+	}
+	if values, ok := q["transaction_data"]; ok {
+		ar.TransactionData = append([]string(nil), values...)
+	}
+
+	if err := ar.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid authorization request returned by backend: %w", err)
+	}
 
 	if err := s.presentationStore.SaveRequest(state, ar); err != nil {
 		return nil, fmt.Errorf("store authorization request: %w", err)

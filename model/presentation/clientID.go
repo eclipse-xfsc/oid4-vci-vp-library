@@ -24,6 +24,9 @@ func ParseClientIdentifier(v string) (ClientIdentifier, error) {
 		return ClientIdentifier{Prefix: "pre-registered", Value: v}, nil
 	}
 	p := v[:i]
+	if p == "origin" {
+		return ClientIdentifier{}, fmt.Errorf("reserved client identifier prefix %q must not be accepted", p)
+	}
 	value := v[i+1:]
 	if value == "" {
 		return ClientIdentifier{}, fmt.Errorf("client identifier value is empty")

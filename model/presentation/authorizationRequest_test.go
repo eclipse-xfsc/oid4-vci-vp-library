@@ -17,7 +17,7 @@ func TestAuthorizationRequestFinalDCQLValidation(t *testing.T) {
 }
 
 func TestAuthorizationRequestRequiresQueryOrScope(t *testing.T) {
-	req := AuthorizationRequest{ClientID: "client", ResponseType: "vp_token", Nonce: "n"}
+	req := AuthorizationRequest{ClientID: "client", ResponseType: "vp_token", ResponseMode: "fragment", Nonce: "n"}
 	if err := req.Validate(); err == nil {
 		t.Fatal("expected query/scope validation error")
 	}

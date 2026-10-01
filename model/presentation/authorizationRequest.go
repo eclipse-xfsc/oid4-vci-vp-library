@@ -30,13 +30,7 @@ type AuthorizationRequest struct {
 }
 
 func (r *AuthorizationRequest) EffectiveResponseMode() string {
-	if r.ResponseMode != "" {
-		return r.ResponseMode
-	}
-	if containsResponseType(r.ResponseType, "vp_token") {
-		return "fragment"
-	}
-	return ""
+	return r.ResponseMode
 }
 
 var oauthSafeValue = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
@@ -51,11 +45,14 @@ func (r *AuthorizationRequest) Validate() error {
 	if r.ResponseType == "" {
 		return errors.New("response_type is required")
 	}
-	if !containsResponseType(r.ResponseType, "vp_token") && r.ResponseType != "code" {
-		return errors.New("response_type must contain vp_token or be code")
+	if !validResponseType(r.ResponseType) {
+		return errors.New("response_type must be vp_token, vp_token id_token, id_token vp_token, or code")
 	}
-	if containsResponseType(r.ResponseType, "vp_token") && r.Nonce == "" {
-		return errors.New("nonce is required for vp_token")
+	if r.ResponseMode == "" {
+		return errors.New("response_mode is required")
+	}
+	if r.Nonce == "" {
+		return errors.New("nonce is required")
 	}
 	if r.Nonce != "" && !oauthSafeValue.MatchString(r.Nonce) {
 		return errors.New("nonce must contain only ASCII URL-safe characters")
@@ -155,4 +152,17 @@ func containsResponseType(value, expected string) bool {
 		}
 	}
 	return false
+}
+
+func validResponseType(value string) bool {
+	tokens := strings.Fields(value)
+	switch len(tokens) {
+	case 1:
+		return tokens[0] == "vp_token" || tokens[0] == "code"
+	case 2:
+		return (tokens[0] == "vp_token" && tokens[1] == "id_token") ||
+			(tokens[0] == "id_token" && tokens[1] == "vp_token")
+	default:
+		return false
+	}
 }

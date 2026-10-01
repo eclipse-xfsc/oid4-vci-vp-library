@@ -32,12 +32,19 @@ type ResponseEncryptor interface {
 	EncryptAuthorizationResponse(ctx context.Context, response presentation.AuthorizationResponse, metadata *presentation.VerifierMetadata) (string, error)
 }
 
+// ScopeResolver resolves an OID4VP scope value to the DCQL query registered for it.
+// OID4VP 1.0 permits a request to carry either scope or dcql_query.
+type ScopeResolver interface {
+	ResolveDCQLScope(ctx context.Context, scope string) (*presentation.DCQLQuery, error)
+}
+
 type RelyingPartyService struct {
 	backend           WalletBackend
 	httpClient        *http.Client
 	requestVerifier   RequestObjectVerifier
 	responseEncryptor ResponseEncryptor
 	walletMetadata    *presentation.WalletMetadata
+	scopeResolver     ScopeResolver
 }
 type WalletService = RelyingPartyService
 
@@ -60,6 +67,10 @@ func (s *RelyingPartyService) WithResponseEncryptor(v ResponseEncryptor) *Relyin
 }
 func (s *RelyingPartyService) WithWalletMetadata(v *presentation.WalletMetadata) *RelyingPartyService {
 	s.walletMetadata = v
+	return s
+}
+func (s *RelyingPartyService) WithScopeResolver(v ScopeResolver) *RelyingPartyService {
+	s.scopeResolver = v
 	return s
 }
 
@@ -109,7 +120,20 @@ func (s *RelyingPartyService) BeginFlow(ctx context.Context, raw string) ([]pres
 		return nil, nil, fmt.Errorf("invalid authorization request: %w", err)
 	}
 	if ar.DCQLQuery == nil {
-		return nil, nil, fmt.Errorf("scope-based DCQL resolution is not implemented by this service")
+		if s.scopeResolver == nil {
+			return nil, nil, fmt.Errorf("scope-based request requires a ScopeResolver")
+		}
+		resolved, err := s.scopeResolver.ResolveDCQLScope(ctx, ar.Scope)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolve scope %q: %w", ar.Scope, err)
+		}
+		if resolved == nil {
+			return nil, nil, fmt.Errorf("scope %q did not resolve to a dcql_query", ar.Scope)
+		}
+		if err := resolved.Validate(); err != nil {
+			return nil, nil, fmt.Errorf("scope %q resolved to invalid dcql_query: %w", ar.Scope, err)
+		}
+		ar.DCQLQuery = resolved
 	}
 	matches, err := s.backend.MatchCredentials(ctx, ar.DCQLQuery)
 	if err != nil {
