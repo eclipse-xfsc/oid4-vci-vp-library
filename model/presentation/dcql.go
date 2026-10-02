@@ -122,7 +122,7 @@ type TrustedAuthoritiesQuery struct {
 
 type CredentialQuery struct {
 	ID                                string                    `json:"id"`
-	Format                            string                    `json:"format"`
+	Format                            types.CredentialFormat    `json:"format"`
 	Meta                              map[string]any            `json:"meta"`
 	TrustedAuthorities                []TrustedAuthoritiesQuery `json:"trusted_authorities,omitempty"`
 	Claims                            []ClaimQuery              `json:"claims,omitempty"`
@@ -189,7 +189,7 @@ func (q *DCQLQuery) Validate() error {
 		if cq.Meta == nil {
 			return fmt.Errorf("credential query %q: meta is required (use an empty object when unconstrained)", cq.ID)
 		}
-		if cq.Format == string(types.SDJWT) {
+		if cq.Format == types.SDJWT {
 			v, ok := cq.Meta["vct_values"]
 			if !ok || !nonEmptyStringArray(v) {
 				return fmt.Errorf("credential query %q: dc+sd-jwt meta.vct_values must be a non-empty string array", cq.ID)
@@ -280,7 +280,7 @@ func (q *DCQLQuery) Filter(credentials map[string]any) ([]FilterResult, error) {
 
 		for i := range q.Credentials {
 			cq := &q.Credentials[i]
-			match, err := cq.evaluateCredentialQuery(credential, string(credential.Format))
+			match, err := cq.evaluateCredentialQuery(credential, credential.Format)
 			if err != nil {
 				return nil, fmt.Errorf("credential query %q evaluation failed: %w", cq.ID, err)
 			}
@@ -307,7 +307,7 @@ func (q *DCQLQuery) Filter(credentials map[string]any) ([]FilterResult, error) {
 	return result, nil
 }
 
-func (q *CredentialQuery) evaluateCredentialQuery(c *types.Credential, format string) (bool, error) {
+func (q *CredentialQuery) evaluateCredentialQuery(c *types.Credential, format types.CredentialFormat) (bool, error) {
 	if q.Format != format || c.Format != types.CredentialFormat(q.Format) {
 		return false, nil
 	}
@@ -375,11 +375,11 @@ func valuesEqual(actual, expected any) bool {
 	return reflect.DeepEqual(actual, expected)
 }
 
-func matchMetadata(meta map[string]any, claims map[string]any, format string) bool {
+func matchMetadata(meta map[string]any, claims map[string]any, format types.CredentialFormat) bool {
 	for name, expected := range meta {
 		switch name {
 		case "vct_values":
-			if format != string(types.SDJWT) {
+			if format != types.SDJWT {
 				return false
 			}
 			actual, ok := claims["vct"]

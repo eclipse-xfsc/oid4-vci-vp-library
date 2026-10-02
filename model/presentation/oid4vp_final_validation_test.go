@@ -39,12 +39,48 @@ func TestOID4VPFinalRequiresStateWithoutHolderBinding(t *testing.T) {
 }
 
 func TestOID4VPFinalRequiresResponseMode(t *testing.T) {
-	r := AuthorizationRequest{ClientID: "client", ResponseType: "vp_token", ResponseMode: "fragment", Nonce: "nonce", DCQLQuery: &DCQLQuery{Credentials: []CredentialQuery{{ID: "pid", Format: "jwt_vc_json", Meta: map[string]any{}}}}}
-	if r.Validate() == nil {
-		t.Fatal("expected response_mode requirement")
+	r := AuthorizationRequest{
+		ClientID:     "client",
+		ResponseType: "vp_token",
+		Nonce:        "nonce",
+		DCQLQuery: &DCQLQuery{
+			Credentials: []CredentialQuery{
+				{
+					ID:     "pid",
+					Format: "jwt_vc_json",
+					Meta:   map[string]any{},
+				},
+			},
+		},
+	}
+
+	err := r.Validate()
+	if err == nil {
+		t.Fatal("expected missing response_mode to fail validation")
 	}
 }
 
+func TestOID4VPFinalAllowsFragmentResponseMode(t *testing.T) {
+	r := AuthorizationRequest{
+		ClientID:     "client",
+		ResponseType: "vp_token",
+		ResponseMode: "fragment",
+		Nonce:        "nonce",
+		DCQLQuery: &DCQLQuery{
+			Credentials: []CredentialQuery{
+				{
+					ID:     "pid",
+					Format: "jwt_vc_json",
+					Meta:   map[string]any{},
+				},
+			},
+		},
+	}
+
+	if err := r.Validate(); err != nil {
+		t.Fatalf("expected valid request, got: %v", err)
+	}
+}
 func TestOID4VPFinalRequiresNonceForCode(t *testing.T) {
 	r := AuthorizationRequest{ClientID: "client", ResponseType: "code", ResponseMode: "fragment", Scope: "example"}
 	if r.Validate() == nil {

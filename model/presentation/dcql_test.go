@@ -85,7 +85,7 @@ func TestEvaluateCredentialQueryTypedValues(t *testing.T) {
 			{Path: ClaimsPathPointer{"credentialSubject", "active"}, Values: []any{true}},
 		},
 	}
-	match, err := q.evaluateCredentialQuery(cred, string(cred.Format))
+	match, err := q.evaluateCredentialQuery(cred, cred.Format)
 	if err != nil || !match {
 		t.Fatalf("expected typed values to match; match=%v err=%v", match, err)
 	}
@@ -101,7 +101,7 @@ func TestEvaluateCredentialQuerySDJWTMetadata(t *testing.T) {
 		Meta:   map[string]any{"vct_values": []any{"https://credentials.example.com/identity_credential"}},
 		Claims: []ClaimQuery{{Path: ClaimsPathPointer{"given_name"}}},
 	}
-	match, err := q.evaluateCredentialQuery(cred, string(cred.Format))
+	match, err := q.evaluateCredentialQuery(cred, cred.Format)
 	if err != nil || !match {
 		t.Fatalf("expected SD-JWT metadata to match; match=%v err=%v", match, err)
 	}
