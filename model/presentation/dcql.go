@@ -275,12 +275,15 @@ func (q *DCQLQuery) Filter(credentials map[string]any) ([]FilterResult, error) {
 	for key, raw := range credentials {
 		credential, err := types.CheckFormat(raw)
 		if err != nil {
-			return nil, fmt.Errorf("unsupported credential %s: %w", key, err)
+			// A wallet can contain credential formats this adapter does not support.
+			// Such credentials are not candidates for this DCQL query and must not
+			// make evaluation of all other credentials fail.
+			continue
 		}
 
 		for i := range q.Credentials {
 			cq := &q.Credentials[i]
-			match, err := cq.evaluateCredentialQuery(credential, credential.Format)
+			match, err := cq.evaluateCredentialQuery(credential)
 			if err != nil {
 				return nil, fmt.Errorf("credential query %q evaluation failed: %w", cq.ID, err)
 			}
@@ -307,8 +310,8 @@ func (q *DCQLQuery) Filter(credentials map[string]any) ([]FilterResult, error) {
 	return result, nil
 }
 
-func (q *CredentialQuery) evaluateCredentialQuery(c *types.Credential, format types.CredentialFormat) (bool, error) {
-	if q.Format != format || c.Format != types.CredentialFormat(q.Format) {
+func (q *CredentialQuery) evaluateCredentialQuery(c *types.Credential) (bool, error) {
+	if q.Format != c.Format {
 		return false, nil
 	}
 	if !matchMetadata(q.Meta, c.Json, q.Format) {
