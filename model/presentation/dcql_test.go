@@ -404,3 +404,68 @@ func TestDCQLValidateRejectsDuplicateClaimID(t *testing.T) {
 		t.Fatal("expected duplicate claim id to fail")
 	}
 }
+
+func TestCheckFormatSDJWT(t *testing.T) {
+	const raw = `eyJ0eXAiOiJzZCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpZCI6IjEyMzQiLCJ2Y3QiOiJodHRwczovL2NyZWRlbnRpYWxzLmV4YW1wbGUuY29tL2lkZW50aXR5X2NyZWRlbnRpYWwiLCJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDpleGFtcGxlOmhvbGRlciIsIl9zZCI6WyJMcHlzRERfY2Fka0ZJby00WDVHWTN4UUtYLVdyYUpGbUV2N1ZTcmZ1M053IiwiVEZybVBBS2liOG1IeU54M1RPOUtGS2pGWEhNNEFQX3hKa2ZvWURxWXQ5WSIsIl9qSl93dVBTSXY0TlRNX1BGWS13cnVUOTZua2lGQ0YyYzhVeU5WSm9JUlUiXSwiX3NkX2FsZyI6IlNIQS0yNTYifQ.EZMU63KT3KODUAEMjesXiu6R-zayyL1xVwQXjT0mxqefW68-bi6-B2l03L2NmnFnlU6YMwLvl-nOY5uDm_Wcuw~WyI5ZTZkZDFjYWM0NDQ0NGNlIiwiZmlyc3RuYW1lIiwiSm9obiJd~WyJkMjBjMmUxOWQxMDU5NTMyIiwibGFzdG5hbWUiLCJEb2UiXQ~WyI2NDJiOGIyNGVjMDAxZGE1Iiwic3NuIiwiMTIzLTQ1LTY3ODkiXQ~`
+
+	cred, err := types.CheckFormat(raw)
+	if err != nil {
+		t.Fatalf("CheckFormat failed: %v", err)
+	}
+
+	t.Logf("format=%s", cred.Format)
+	t.Logf("json=%#v", cred.Json)
+
+	if cred.Format != types.SDJWT {
+		t.Fatalf("expected %s, got %s", types.SDJWT, cred.Format)
+	}
+
+	if got := cred.Json["vct"]; got != "https://credentials.example.com/identity_credential" {
+		t.Fatalf("unexpected vct: %#v", got)
+	}
+
+	if got := cred.Json["firstname"]; got != "John" {
+		t.Fatalf("unexpected firstname: %#v", got)
+	}
+}
+
+func TestDCQLQueryFilterCompactSDJWTWithKeyBindingJWT(t *testing.T) {
+	const raw = `eyJ0eXAiOiJzZCtqd3QiLCJhbGciOiJFUzI1NiJ9.eyJpZCI6IjEyMzQiLCJ2Y3QiOiJodHRwczovL2NyZWRlbnRpYWxzLmV4YW1wbGUuY29tL2lkZW50aXR5X2NyZWRlbnRpYWwiLCJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlLmNvbSIsInN1YiI6ImRpZDpleGFtcGxlOmhvbGRlciIsIl9zZCI6WyJMcHlzRERfY2Fka0ZJby00WDVHWTN4UUtYLVdyYUpGbUV2N1ZTcmZ1M053IiwiVEZybVBBS2liOG1IeU54M1RPOUtGS2pGWEhNNEFQX3hKa2ZvWURxWXQ5WSIsIl9qSl93dVBTSXY0TlRNX1BGWS13cnVUOTZua2lGQ0YyYzhVeU5WSm9JUlUiXSwiX3NkX2FsZyI6IlNIQS0yNTYifQ.EZMU63KT3KODUAEMjesXiu6R-zayyL1xVwQXjT0mxqefW68-bi6-B2l03L2NmnFnlU6YMwLvl-nOY5uDm_Wcuw~WyI5ZTZkZDFjYWM0NDQ0NGNlIiwiZmlyc3RuYW1lIiwiSm9obiJd~WyJkMjBjMmUxOWQxMDU5NTMyIiwibGFzdG5hbWUiLCJEb2UiXQ~WyI2NDJiOGIyNGVjMDAxZGE1Iiwic3NuIiwiMTIzLTQ1LTY3ODkiXQ~`
+
+	credentials := map[string]any{
+		"sd-jwt-1": raw,
+	}
+
+	query := DCQLQuery{
+		Credentials: []CredentialQuery{
+			{
+				ID:     "person",
+				Format: types.SDJWT,
+				Meta: map[string]any{
+					"vct_values": []any{
+						"https://credentials.example.com/identity_credential",
+					},
+				},
+				Claims: []ClaimQuery{
+					{
+						Path:   ClaimsPathPointer{"firstname"},
+						Values: []any{"John"},
+					},
+				},
+			},
+		},
+	}
+
+	results, err := query.Filter(credentials)
+	if err != nil {
+		t.Fatalf("unexpected error filtering compact SD-JWT: %v", err)
+	}
+
+	if len(results) != 1 || len(results[0].Credentials) != 1 {
+		t.Fatalf("expected one matching SD-JWT credential, got %#v", results)
+	}
+
+	if _, ok := results[0].Credentials["sd-jwt-1"]; !ok {
+		t.Fatal("expected sd-jwt-1 in DCQL result")
+	}
+}
